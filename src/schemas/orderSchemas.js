@@ -6,10 +6,16 @@ const create = z.object({
   deliveryAddress: z.string().min(5).max(500),
   deliveryLatitude: z.number().optional(),
   deliveryLongitude: z.number().optional(),
+  mechanicId: z.string().uuid().optional(),
+});
+
+const rateMechanic = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
 });
 
 const updateStatus = z.object({
   status: z.enum(['accepted_by_seller', 'rejected_by_seller', 'cancelled']),
 });
 
-module.exports = { create, updateStatus };
+module.exports = { create, updateStatus, rateMechanic };

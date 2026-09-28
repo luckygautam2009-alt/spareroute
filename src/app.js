@@ -15,6 +15,8 @@ const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const deliveryRoutes = require('./routes/deliveryRoutes');
+const internalRoutes = require('./routes/internalRoutes');
+const mechanicRoutes = require('./routes/mechanicRoutes');
 
 const app = express();
 
@@ -52,6 +54,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/delivery', deliveryRoutes);
+app.use('/api/internal', internalRoutes);
+app.use('/api/mechanics', mechanicRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler); // must be last

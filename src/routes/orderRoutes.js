@@ -6,16 +6,11 @@ const requireAuth = require('../middlewares/auth');
 const requireRole = require('../middlewares/rbac');
 
 const router = express.Router();
-
 router.use(requireAuth);
 
 router.post('/', requireRole('buyer'), validate(schemas.create), orderController.create);
 router.get('/my', requireRole('buyer'), orderController.myOrders);
-router.patch(
-  '/:orderId/status',
-  requireRole('seller'),
-  validate(schemas.updateStatus),
-  orderController.updateStatus
-);
+router.patch('/:orderId/status', requireRole('seller'), validate(schemas.updateStatus), orderController.updateStatus);
+router.patch('/:orderId/rate-mechanic', requireRole('buyer'), validate(schemas.rateMechanic), orderController.rateMechanic);
 
 module.exports = router;
