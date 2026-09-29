@@ -2,12 +2,17 @@ const db = require('../config/db');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const getCustomerContext = asyncHandler(async (req, res) => {
   const { userId } = req.params;
+  if (!UUID_RE.test(userId)) {
+    throw new AppError('Invalid user id', 400);
+  }
 
   const customerResult = await db.query(
     `SELECT id, full_name AS name, phone, email, created_at AS "joinedOn"
-     FROM users WHERE id = $1 AND role = 'buyer'`,
+     FROM users WHERE id = $1 AND role = 'buyer' AND is_active = TRUE`,
     [userId]
   );
   const customer = customerResult.rows[0];
@@ -58,4 +63,20 @@ const getCustomerContext = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { getCustomerContext };
+const getAuthStatus = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  if (!UUID_RE.test(userId)) {
+    throw new AppError('Invalid user id', 400);
+  }
+  const result = await db.query(
+    'SELECT id, role, is_active FROM users WHERE id = $1',
+    [userId]
+  );
+  const user = result.rows[0];
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+  res.json({ success: true, data: { id: user.id, role: user.role, isActive: user.is_active } });
+});
+
+module.exports = { getCustomerContext, getAuthStatus };
