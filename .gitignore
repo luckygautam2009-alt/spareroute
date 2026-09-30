@@ -1,6 +1,46 @@
+# Dependencies
 node_modules/
+**/node_modules/
+
+# Environment files
 .env
-*.log
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS files
 .DS_Store
-server.log
-server_prod.log
+**/.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+**/dist/
+**/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Database & SQLite files
+*.db
+*.db-shm
+*.db-wal
+
+# Editor & Tooling
+.vscode/
+.idea/
+.kilo/
+*.swp
+*.swo
+
+# Project specific
+reference_card.json

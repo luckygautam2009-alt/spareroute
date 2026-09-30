@@ -1,0 +1,79 @@
+[
+  {
+    "id": "POLICY1",
+    "title": "Failed Payment / Amount Deducted",
+    "condition": "gateway_success_local_failed",
+    "eligibleWithinDays": null,
+    "description": "If the payment gateway confirms a successful debit but the order was not created locally, the customer is eligible for a reconciliation refund."
+  },
+  {
+    "id": "POLICY2",
+    "title": "Refund Pending",
+    "condition": "refund_pending",
+    "eligibleWithinDays": null,
+    "description": "An initiated refund that is still in pending status is being processed and awaiting bank settlement."
+  },
+  {
+    "id": "POLICY3",
+    "title": "Return & Exchange",
+    "condition": "delivered_no_return_requested",
+    "eligibleWithinDays": 10,
+    "description": "Products can be returned within 10 days of delivery if unused and undamaged."
+  },
+  {
+    "id": "POLICY4",
+    "title": "Return Received — Refund Eligibility",
+    "condition": "return_received_at_warehouse",
+    "eligibleWithinDays": null,
+    "description": "If a returned item has been received at the warehouse, the customer is fully eligible for a refund."
+  },
+  {
+    "id": "POLICY5",
+    "title": "Order Cancellation",
+    "condition": "order_cancelled",
+    "eligibleWithinDays": null,
+    "description": "Customers may request confirmation of cancellation status and reason for any order marked cancelled in the system."
+  },
+  {
+    "id": "POLICY6",
+    "title": "Damaged Product Claim",
+    "condition": "damaged_product",
+    "eligibleWithinDays": 7,
+    "description": "Physical damage claims require photo verification from the customer before a replacement or refund is issued."
+  },
+  {
+    "id": "POLICY7",
+    "title": "Duplicate Payment Refund",
+    "condition": "duplicate_payment",
+    "eligibleWithinDays": 7,
+    "description": "Customers are eligible for a full refund if a duplicate payment is detected within 7 days of transaction."
+  },
+  {
+    "id": "POLICY8",
+    "title": "Wrong Product Delivered",
+    "condition": "wrong_item_received",
+    "eligibleWithinDays": 7,
+    "description": "If a customer receives an item different from what was ordered, warehouse dispatch logs must be compared before a refund or replacement is issued."
+  },
+  {
+    "id": "POLICY9",
+    "title": "Account Security Review",
+    "condition": "suspicious_activity",
+    "eligibleWithinDays": null,
+    "description": "Any suspected unauthorized account access must be escalated to the security team for manual review before any account or payment action is taken."
+  },
+  {
+    "id": "POLICY10",
+    "title": "Delivered Not Received",
+    "condition": "delivered_not_received",
+    "eligibleWithinDays": null,
+    "description": "If tracking shows delivery but the customer disputes receipt, courier proof-of-delivery must be obtained before resolution."
+  },
+  {
+    "id": "POLICY11",
+    "title": "Delayed Delivery / In-Transit",
+    "condition": "delivery_delay",
+    "eligibleWithinDays": null,
+    "description": "If an order remains in_transit beyond its expected delivery window, the customer is eligible for a shipping credit or expedited redelivery."
+  }
+]

@@ -1,0 +1,33 @@
+[
+  {
+    "id": "TICKET001",
+    "customerId": "CUST001",
+    "category": "billing",
+    "subject": "Similar duplicate charge issue",
+    "status": "resolved",
+    "date": "2026-06-15",
+    "resolvedOn": "2026-06-15",
+    "resolution": "Refund issued for duplicate payment"
+  },
+  {
+    "id": "TICKET002",
+    "customerId": "CUST004",
+    "category": "security",
+    "subject": "Suspicious login alert notification",
+    "status": "open",
+    "date": "2026-09-22",
+    "resolvedOn": null,
+    "resolution": null,
+    "notes": "Customer reported unexpected login alert from St. Petersburg, Russia"
+  },
+  {
+    "id": "TICKET003",
+    "customerId": "CUST004",
+    "category": "delivery",
+    "subject": "Late delivery complaint",
+    "status": "resolved",
+    "date": "2026-07-20",
+    "resolvedOn": "2026-07-20",
+    "resolution": "Goodwill credit issued"
+  }
+]

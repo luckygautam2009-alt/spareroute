@@ -1,0 +1,23 @@
+[
+  {
+    "id": "REF101",
+    "orderId": "ORDER101",
+    "customerId": "CUST003",
+    "amount": 2199,
+    "status": "pending",
+    "initiatedAt": "2026-09-13T10:00:00Z",
+    "reason": "Return item received at warehouse, awaiting bank settlement",
+    "gatewayRef": "rf_hdfc_101"
+  },
+  {
+    "id": "REF789",
+    "orderId": "ORDER789",
+    "customerId": "CUST002",
+    "amount": 3499,
+    "status": "completed",
+    "initiatedAt": "2026-09-18T09:00:00Z",
+    "completedAt": "2026-09-18T10:30:00Z",
+    "reason": "Order cancelled before dispatch",
+    "gatewayRef": "rf_upi_789"
+  }
+]

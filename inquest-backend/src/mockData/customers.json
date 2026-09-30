@@ -1,0 +1,42 @@
+[
+  {
+    "id": "CUST001",
+    "name": "Ravi Sharma",
+    "email": "ravi.sharma@example.com",
+    "tier": "gold",
+    "joinedDate": "2023-05-12",
+    "joinedOn": "2023-05-12"
+  },
+  {
+    "id": "CUST002",
+    "name": "Priya Mehta",
+    "email": "priya.mehta@example.com",
+    "tier": "silver",
+    "joinedDate": "2024-01-20",
+    "joinedOn": "2024-01-20"
+  },
+  {
+    "id": "CUST003",
+    "name": "Aman Verma",
+    "email": "aman.verma@example.com",
+    "tier": "platinum",
+    "joinedDate": "2022-11-03",
+    "joinedOn": "2022-11-03"
+  },
+  {
+    "id": "CUST004",
+    "name": "Sneha Kapoor",
+    "email": "sneha.kapoor@example.com",
+    "tier": "silver",
+    "joinedDate": "2025-03-15",
+    "joinedOn": "2025-03-15"
+  },
+  {
+    "id": "CUST005",
+    "name": "shobhit",
+    "email": "luckygautam2009@gmail.com",
+    "tier": "silver",
+    "joinedDate": "2026-09-24",
+    "joinedOn": "2026-09-24"
+  }
+]

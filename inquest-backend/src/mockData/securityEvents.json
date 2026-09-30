@@ -1,0 +1,33 @@
+[
+  {
+    "id": "SEC001",
+    "customerId": "CUST004",
+    "eventType": "failed_login",
+    "ip": "185.220.101.5",
+    "location": "St. Petersburg, Russia",
+    "device": "Linux Chrome",
+    "timestamp": "2026-09-22T03:14:00Z",
+    "flagged": true
+  },
+  {
+    "id": "SEC002",
+    "customerId": "CUST004",
+    "eventType": "successful_login",
+    "ip": "185.220.101.5",
+    "location": "St. Petersburg, Russia",
+    "device": "Linux Chrome",
+    "timestamp": "2026-09-22T03:15:20Z",
+    "flagged": true,
+    "alert": "Unrecognized device and geolocation"
+  },
+  {
+    "id": "SEC003",
+    "customerId": "CUST004",
+    "eventType": "password_reset_attempt",
+    "ip": "185.220.101.5",
+    "location": "St. Petersburg, Russia",
+    "device": "Linux Chrome",
+    "timestamp": "2026-09-22T03:17:00Z",
+    "flagged": true
+  }
+]
