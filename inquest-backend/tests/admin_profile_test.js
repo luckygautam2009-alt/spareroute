@@ -1,13 +1,13 @@
 const assert = require('assert');
-const path = require('path');
+require('dotenv').config();
 
 async function runTests() {
-  console.log('🧪 Starting Admin Profile tests...');
+  console.log('🧪 Starting Admin Profile tests with PostgreSQL...');
   const db = require('../src/db/connection');
   const adminController = require('../src/controllers/admin.controller');
 
   // Clean test rows
-  db.prepare("DELETE FROM admin_profiles WHERE email LIKE '%@test.com'").run();
+  await db.query("DELETE FROM admin_profiles WHERE email LIKE '%@test.com'");
 
   // Test 1: getOrCreateProfile creates a new admin profile with sequential employee code
   const mockReq1 = {
@@ -24,7 +24,7 @@ async function runTests() {
     json(d) { resData1 = d; return this; },
   };
 
-  adminController.getOrCreateProfile(mockReq1, mockRes1);
+  await adminController.getOrCreateProfile(mockReq1, mockRes1);
 
   assert.strictEqual(resStatus1, 200, 'Status should be 200');
   assert.strictEqual(resData1.success, true, 'Success should be true');
@@ -45,7 +45,7 @@ async function runTests() {
     status() { return this; },
     json(d) { resData2 = d; return this; },
   };
-  adminController.getOrCreateProfile(mockReq2, mockRes2);
+  await adminController.getOrCreateProfile(mockReq2, mockRes2);
   assert.notStrictEqual(resData1.profile.employee_code, resData2.profile.employee_code, 'Employee codes must be unique');
   console.log('✅ Test 2 Passed: Admin 2 profile created with code', resData2.profile.employee_code);
 
@@ -62,7 +62,7 @@ async function runTests() {
     status() { return this; },
     json(d) { photoResData = d; return this; },
   };
-  adminController.updateProfilePhoto(photoReq, photoRes);
+  await adminController.updateProfilePhoto(photoReq, photoRes);
   assert.strictEqual(photoResData.profile.profile_photo, photoData, 'Photo should be saved to profile');
   console.log('✅ Test 3 Passed: Profile photo updated successfully');
 
@@ -78,13 +78,34 @@ async function runTests() {
     status() { return this; },
     json(d) { nameResData = d; return this; },
   };
-  adminController.updateProfileName(nameReq, nameRes);
+  await adminController.updateProfileName(nameReq, nameRes);
   assert.strictEqual(nameResData.profile.name, 'Updated Admin One', 'Name should be updated');
   console.log('✅ Test 4 Passed: Profile name updated successfully');
 
+  // Test 5: getOverview returns tickets, refunds, securityEvents, policies and empty customers/orders/payments
+  let overviewData = null;
+  const overviewRes = {
+    status(s) { return this; },
+    json(d) { overviewData = d; return this; },
+  };
+  await adminController.getOverview({}, overviewRes);
+  assert.strictEqual(overviewData.success, true);
+  assert(Array.isArray(overviewData.data.customers), 'customers should be array');
+  assert.strictEqual(overviewData.data.customers.length, 0, 'customers should be empty array');
+  assert(Array.isArray(overviewData.data.orders), 'orders should be array');
+  assert.strictEqual(overviewData.data.orders.length, 0, 'orders should be empty array');
+  assert(Array.isArray(overviewData.data.payments), 'payments should be array');
+  assert.strictEqual(overviewData.data.payments.length, 0, 'payments should be empty array');
+  assert(Array.isArray(overviewData.data.tickets), 'tickets should be array');
+  assert(Array.isArray(overviewData.data.refunds), 'refunds should be array');
+  assert(Array.isArray(overviewData.data.securityEvents), 'securityEvents should be array');
+  assert(Array.isArray(overviewData.data.policies), 'policies should be array');
+  console.log('✅ Test 5 Passed: getOverview returns correct schema with PostgreSQL data');
+
   // Cleanup test profiles
-  db.prepare("DELETE FROM admin_profiles WHERE email LIKE '%@test.com'").run();
-  console.log('🎉 ALL ADMIN PROFILE TESTS PASSED PERFECTLY!');
+  await db.query("DELETE FROM admin_profiles WHERE email LIKE '%@test.com'");
+  console.log('🎉 ALL ADMIN CONTROLLER TESTS PASSED PERFECTLY!');
+  process.exit(0);
 }
 
 runTests().catch((err) => {

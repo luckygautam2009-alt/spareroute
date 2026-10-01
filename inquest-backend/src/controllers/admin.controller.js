@@ -1,99 +1,143 @@
 const db = require('../db/connection');
 
-function getOverview(req, res) {
-  const data = {
-    customers: db.prepare('SELECT * FROM customers').all(),
-    orders: db.prepare('SELECT * FROM orders').all(),
-    payments: db.prepare('SELECT * FROM payments').all(),
-    tickets: db.prepare('SELECT * FROM tickets').all(),
-    refunds: db.prepare('SELECT * FROM refunds').all(),
-    securityEvents: db.prepare('SELECT * FROM security_events').all(),
-    policies: db.prepare('SELECT * FROM policies').all(),
-  };
-  res.status(200).json({ success: true, data });
+async function getOverview(req, res) {
+  try {
+    const [ticketsRes, refundsRes, securityRes, policiesRes] = await Promise.all([
+      db.query('SELECT * FROM tickets ORDER BY date DESC'),
+      db.query('SELECT * FROM refunds ORDER BY initiated_at DESC'),
+      db.query('SELECT * FROM security_events ORDER BY timestamp DESC'),
+      db.query('SELECT * FROM policies ORDER BY id ASC'),
+    ]);
+
+    const data = {
+      customers: [],
+      orders: [],
+      payments: [],
+      tickets: ticketsRes.rows,
+      refunds: refundsRes.rows,
+      securityEvents: securityRes.rows,
+      policies: policiesRes.rows,
+    };
+
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('[admin.controller] getOverview failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
 }
 
-function getOrCreateProfile(req, res) {
-  const { email, name } = req.body;
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  const trimmedName = String(name || '').trim() || 'Authorized Staff';
+async function getOrCreateProfile(req, res) {
+  try {
+    const { email, name } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const trimmedName = String(name || '').trim() || 'Authorized Staff';
 
-  if (!normalizedEmail) {
-    return res.status(400).json({ success: false, error: 'Email is required' });
-  }
-
-  const existing = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-
-  if (existing) {
-    // If name changed, update it safely
-    if (trimmedName && existing.name !== trimmedName) {
-      db.prepare('UPDATE admin_profiles SET name = ?, updated_at = ? WHERE email = ?')
-        .run(trimmedName, new Date().toISOString(), normalizedEmail);
-      existing.name = trimmedName;
+    if (!normalizedEmail) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
     }
-    return res.status(200).json({ success: true, profile: existing });
+
+    const existingRes = await db.query(
+      'SELECT * FROM admin_profiles WHERE email = $1',
+      [normalizedEmail]
+    );
+
+    if (existingRes.rows.length > 0) {
+      const existing = existingRes.rows[0];
+      if (trimmedName && existing.name !== trimmedName) {
+        const updateRes = await db.query(
+          'UPDATE admin_profiles SET name = $1, updated_at = NOW() WHERE email = $2 RETURNING *',
+          [trimmedName, normalizedEmail]
+        );
+        return res.status(200).json({ success: true, profile: updateRes.rows[0] });
+      }
+      return res.status(200).json({ success: true, profile: existing });
+    }
+
+    // Generate a permanent, unique sequential employee code
+    const countRes = await db.query('SELECT COUNT(*)::int AS count FROM admin_profiles');
+    let codeSeqNum = (countRes.rows[0]?.count || 0) + 1;
+    let employeeCode = `INQ-ADM-${String(codeSeqNum).padStart(3, '0')}`;
+    while (true) {
+      const checkRes = await db.query(
+        'SELECT 1 FROM admin_profiles WHERE employee_code = $1',
+        [employeeCode]
+      );
+      if (checkRes.rows.length === 0) {
+        break;
+      }
+      codeSeqNum++;
+      employeeCode = `INQ-ADM-${String(codeSeqNum).padStart(3, '0')}`;
+    }
+
+    const insertRes = await db.query(
+      `INSERT INTO admin_profiles (email, name, employee_code, profile_photo, created_at, updated_at)
+       VALUES ($1, $2, $3, NULL, NOW(), NOW())
+       RETURNING *`,
+      [normalizedEmail, trimmedName, employeeCode]
+    );
+
+    return res.status(200).json({ success: true, profile: insertRes.rows[0] });
+  } catch (err) {
+    console.error('[admin.controller] getOrCreateProfile failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
-
-  // Generate a permanent, unique sequential employee code
-  const totalProfiles = db.prepare('SELECT COUNT(*) as count FROM admin_profiles').get().count;
-  let codeSeqNum = totalProfiles + 1;
-  let employeeCode = `INQ-ADM-${String(codeSeqNum).padStart(3, '0')}`;
-  while (db.prepare('SELECT 1 FROM admin_profiles WHERE employee_code = ?').get(employeeCode)) {
-    codeSeqNum++;
-    employeeCode = `INQ-ADM-${String(codeSeqNum).padStart(3, '0')}`;
-  }
-
-  const now = new Date().toISOString();
-  db.prepare(`
-    INSERT INTO admin_profiles (email, name, employee_code, profile_photo, created_at, updated_at)
-    VALUES (?, ?, ?, NULL, ?, ?)
-  `).run(normalizedEmail, trimmedName, employeeCode, now, now);
-
-  const created = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-  return res.status(200).json({ success: true, profile: created });
 }
 
-function updateProfilePhoto(req, res) {
-  const { email, photo } = req.body;
-  const normalizedEmail = String(email || '').trim().toLowerCase();
+async function updateProfilePhoto(req, res) {
+  try {
+    const { email, photo } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  if (!normalizedEmail) {
-    return res.status(400).json({ success: false, error: 'Email is required' });
+    if (!normalizedEmail) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    const result = await db.query(
+      `UPDATE admin_profiles
+       SET profile_photo = $1, updated_at = NOW()
+       WHERE email = $2
+       RETURNING *`,
+      [photo || null, normalizedEmail]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    return res.status(200).json({ success: true, profile: result.rows[0] });
+  } catch (err) {
+    console.error('[admin.controller] updateProfilePhoto failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
-
-  const existing = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-  if (!existing) {
-    return res.status(404).json({ success: false, error: 'Admin profile not found' });
-  }
-
-  const now = new Date().toISOString();
-  db.prepare('UPDATE admin_profiles SET profile_photo = ?, updated_at = ? WHERE email = ?')
-    .run(photo || null, now, normalizedEmail);
-
-  const updated = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-  return res.status(200).json({ success: true, profile: updated });
 }
 
-function updateProfileName(req, res) {
-  const { email, name } = req.body;
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  const trimmedName = String(name || '').trim();
+async function updateProfileName(req, res) {
+  try {
+    const { email, name } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const trimmedName = String(name || '').trim();
 
-  if (!normalizedEmail || !trimmedName) {
-    return res.status(400).json({ success: false, error: 'Email and name are required' });
+    if (!normalizedEmail || !trimmedName) {
+      return res.status(400).json({ success: false, error: 'Email and name are required' });
+    }
+
+    const result = await db.query(
+      `UPDATE admin_profiles
+       SET name = $1, updated_at = NOW()
+       WHERE email = $2
+       RETURNING *`,
+      [trimmedName, normalizedEmail]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    return res.status(200).json({ success: true, profile: result.rows[0] });
+  } catch (err) {
+    console.error('[admin.controller] updateProfileName failed:', err.message);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
-
-  const existing = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-  if (!existing) {
-    return res.status(404).json({ success: false, error: 'Admin profile not found' });
-  }
-
-  const now = new Date().toISOString();
-  db.prepare('UPDATE admin_profiles SET name = ?, updated_at = ? WHERE email = ?')
-    .run(trimmedName, now, normalizedEmail);
-
-  const updated = db.prepare('SELECT * FROM admin_profiles WHERE email = ?').get(normalizedEmail);
-  return res.status(200).json({ success: true, profile: updated });
 }
 
 module.exports = {
