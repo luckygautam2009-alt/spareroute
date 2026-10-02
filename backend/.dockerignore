@@ -1,0 +1,15 @@
+.env
+.env.*
+node_modules/
+npm-debug.log*
+*.log
+.git
+.gitignore
+tests/
+*.test.js
+*.spec.js
+test_*.jpg
+test_*.png
+ocr_tool
+src/utils/ocr_tool
+README.md
