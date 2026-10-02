@@ -10,9 +10,6 @@ async function getOverview(req, res) {
     ]);
 
     const data = {
-      customers: [],
-      orders: [],
-      payments: [],
       tickets: ticketsRes.rows,
       refunds: refundsRes.rows,
       securityEvents: securityRes.rows,
