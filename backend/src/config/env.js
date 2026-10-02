@@ -56,4 +56,5 @@ module.exports = {
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
     authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 5,
   },
+  trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 0,
 };

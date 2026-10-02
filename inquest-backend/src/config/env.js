@@ -32,4 +32,7 @@ module.exports = {
   spareRouteApiUrl: process.env.SPAREROUTE_API_URL.replace(/\/+$/, ''),
   spareRouteInternalApiKey: process.env.SPAREROUTE_INTERNAL_API_KEY,
   bodyLimit: process.env.BODY_LIMIT || '1mb',
+  trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 0,
+  rateLimitComplaintsMax: parseInt(process.env.RATE_LIMIT_COMPLAINTS_MAX, 10) || 10,
+  rateLimitVerifyMax: parseInt(process.env.RATE_LIMIT_VERIFY_MAX, 10) || 20,
 };

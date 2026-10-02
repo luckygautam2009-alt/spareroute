@@ -20,6 +20,8 @@ const mechanicRoutes = require('./routes/mechanicRoutes');
 
 const app = express();
 
+app.set('trust proxy', env.trustProxy);
+
 // Sets ~15 security-related HTTP headers (X-Frame-Options, HSTS,
 // disables X-Powered-By, etc). Always first.
 app.use(helmet());
