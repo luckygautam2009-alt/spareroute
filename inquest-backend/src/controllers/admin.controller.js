@@ -68,30 +68,31 @@ async function getOrCreateProfile(req, res) {
       return res.status(409).json({ success: false, error: "Profile email already in use" });
     }
 
-    // Generate sequential employee code
-    const countRes = await db.query("SELECT COUNT(*)::int AS count FROM admin_profiles");
-    let codeSeqNum = (countRes.rows[0]?.count || 0) + 1;
-    let employeeCode = "INQ-ADM-" + String(codeSeqNum).padStart(3, "0");
-    while (true) {
-      const checkRes = await db.query(
-        "SELECT 1 FROM admin_profiles WHERE employee_code = $1",
-        [employeeCode]
+    try {
+      const insertRes = await db.query(
+        `INSERT INTO admin_profiles (user_id, email, name, employee_code, profile_photo, created_at, updated_at)
+         VALUES ($1, $2, $3, 'INQ-ADM-' || lpad(nextval('admin_employee_seq')::text, 3, '0'), NULL, NOW(), NOW())
+         ON CONFLICT (user_id) DO NOTHING
+         RETURNING *`,
+        [callerId, normalizedEmail, finalName]
       );
-      if (checkRes.rows.length === 0) {
-        break;
+
+      if (insertRes.rows.length > 0) {
+        return res.status(200).json({ success: true, profile: insertRes.rows[0] });
       }
-      codeSeqNum++;
-      employeeCode = "INQ-ADM-" + String(codeSeqNum).padStart(3, "0");
+
+      // If no row was returned due to ON CONFLICT (user_id), fetch the existing row
+      const fallbackRes = await db.query(
+        "SELECT * FROM admin_profiles WHERE user_id = $1",
+        [callerId]
+      );
+      return res.status(200).json({ success: true, profile: fallbackRes.rows[0] });
+    } catch (insertErr) {
+      if (insertErr.code === "23505") {
+        return res.status(409).json({ success: false, error: "Profile email already in use" });
+      }
+      throw insertErr;
     }
-
-    const insertRes = await db.query(
-      `INSERT INTO admin_profiles (user_id, email, name, employee_code, profile_photo, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NULL, NOW(), NOW())
-       RETURNING *`,
-      [callerId, normalizedEmail, finalName, employeeCode]
-    );
-
-    return res.status(200).json({ success: true, profile: insertRes.rows[0] });
   } catch (err) {
     console.error("[admin.controller] getOrCreateProfile failed:", err.message);
     return res.status(500).json({ success: false, error: "Internal server error" });
