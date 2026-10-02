@@ -10,9 +10,10 @@
  *
  * Modelled on backend/src/db/migrate.js with an added --baseline flag.
  */
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config();
 const fs = require('fs');
-const path = require('path');
 const { Client } = require('pg');
 
 const isBaseline = process.argv.includes('--baseline');
