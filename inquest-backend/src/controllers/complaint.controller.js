@@ -55,6 +55,40 @@ async function submitComplaint(req, res) {
     res.status(200).json({ success: true, data: { ticketId, customerId, complaintText, analysis, investigation, rootCause, decision, handoff, evidenceGraph } });
   } catch (err) {
     console.error('[complaint.controller] submitComplaint failed:', err.message);
+
+    // Gemini failure safety: persist the complaint as a HUMAN_ESCALATION ticket
+    // so it is never silently lost. Never fabricate an analysis.
+    try {
+      const failTicketId = `TICKET-${randomUUID().slice(0, 8).toUpperCase()}`;
+      const failDecision = {
+        decision: 'HUMAN_ESCALATION',
+        reasoning: 'Automated analysis failed due to an internal service error. Complaint has been escalated for manual review.',
+        confidence: 0,
+        sentimentNote: 'Escalated due to processing failure, not sentiment.',
+      };
+      await dataStore.saveTicket({
+        id: failTicketId,
+        customerId,
+        orderId: null,
+        category: 'processing_failure',
+        subject: complaintText ? complaintText.slice(0, 200) : 'Complaint processing failed',
+        status: 'escalated',
+        resolution: null,
+        analysis: { error: 'Analysis unavailable due to service failure' },
+        investigation: { error: 'Investigation unavailable due to service failure' },
+        rootCause: { error: 'Root cause unavailable due to service failure' },
+        decision: failDecision,
+      });
+      console.log(`[complaint.controller] Failure ticket ${failTicketId} persisted for customer ${customerId}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to process complaint. Your complaint has been escalated for manual review.',
+        data: { ticketId: failTicketId, decision: failDecision },
+      });
+    } catch (persistErr) {
+      console.error('[complaint.controller] Failed to persist failure ticket:', persistErr.message);
+    }
+
     res.status(500).json({ success: false, error: 'Failed to process complaint. Please try again.' });
   }
 }
