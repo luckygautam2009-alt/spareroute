@@ -1,4 +1,4 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const config = require('../config/env');
 
 const apiLimiter = rateLimit({
@@ -12,7 +12,7 @@ const apiLimiter = rateLimit({
 const userComplaintsLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: config.rateLimitComplaintsMax,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => (req.user?.id ? String(req.user.id) : ipKeyGenerator(req.ip)),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -25,7 +25,7 @@ const userComplaintsLimiter = rateLimit({
 const userVerifyLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: config.rateLimitVerifyMax,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => (req.user?.id ? String(req.user.id) : ipKeyGenerator(req.ip)),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
