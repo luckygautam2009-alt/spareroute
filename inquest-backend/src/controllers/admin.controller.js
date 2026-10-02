@@ -99,6 +99,33 @@ async function getOrCreateProfile(req, res) {
   }
 }
 
+function validateProfilePhoto(photo) {
+  if (photo === null || photo === undefined || (typeof photo === "string" && photo.trim() === "")) {
+    return { valid: true, value: null };
+  }
+
+  if (typeof photo !== "string") {
+    return { valid: false };
+  }
+
+  const match = photo.match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match) {
+    return { valid: false };
+  }
+
+  const base64Data = match[2];
+  if (base64Data.length % 4 !== 0) {
+    return { valid: false };
+  }
+
+  const buffer = Buffer.from(base64Data, "base64");
+  if (buffer.length === 0 || buffer.length > 512 * 1024) {
+    return { valid: false };
+  }
+
+  return { valid: true, value: photo };
+}
+
 async function updateProfilePhoto(req, res) {
   try {
     const callerId = req.user?.id;
@@ -107,13 +134,17 @@ async function updateProfilePhoto(req, res) {
     }
 
     const { photo } = req.body;
+    const photoValidation = validateProfilePhoto(photo);
+    if (!photoValidation.valid) {
+      return res.status(400).json({ success: false, error: "Invalid photo" });
+    }
 
     const result = await db.query(
       `UPDATE admin_profiles
        SET profile_photo = $1, updated_at = NOW()
        WHERE user_id = $2
        RETURNING *`,
-      [photo || null, callerId]
+      [photoValidation.value, callerId]
     );
 
     if (result.rows.length === 0) {
