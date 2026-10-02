@@ -14,21 +14,28 @@ const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
-app.use(helmet({
-  crossOriginResourcePolicy: false,
-}));
+app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, tests) or local dev origins
-    if (!origin || config.corsOrigins.includes(origin) || origin.startsWith('http://localhost:')) {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) {
       return callback(null, true);
     }
-    return callback(null, true);
+    // Allow origins in CORS_ORIGIN
+    if (config.corsOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // Allow http://localhost:* only in non-production environments
+    if (config.nodeEnv !== 'production' && origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    // Reject other origins
+    return callback(null, false);
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: config.bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
 app.use(morgan(config.nodeEnv === 'development' ? 'dev' : 'combined'));
 app.use('/api', apiLimiter);
 

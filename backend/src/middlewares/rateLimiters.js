@@ -7,7 +7,7 @@ const apiLimiter = rateLimit({
   max: env.rateLimit.maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please try again later.' },
+  message: { success: false, error: 'Too many requests, please try again later.', message: 'Too many requests, please try again later.' },
 });
 
 // Much stricter limit on login/register/OTP endpoints specifically —
@@ -18,7 +18,7 @@ const authLimiter = rateLimit({
   max: env.rateLimit.authMax,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many attempts. Please wait before trying again.' },
+  message: { success: false, error: 'Too many attempts. Please wait before trying again.', message: 'Too many attempts. Please wait before trying again.' },
 });
 
 module.exports = { apiLimiter, authLimiter };

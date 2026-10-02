@@ -31,4 +31,5 @@ module.exports = {
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
   spareRouteApiUrl: process.env.SPAREROUTE_API_URL.replace(/\/+$/, ''),
   spareRouteInternalApiKey: process.env.SPAREROUTE_INTERNAL_API_KEY,
+  bodyLimit: process.env.BODY_LIMIT || '1mb',
 };
