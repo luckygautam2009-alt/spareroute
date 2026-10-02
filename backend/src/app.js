@@ -5,6 +5,7 @@ const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 
 const env = require('./config/env');
+const db = require('./config/db');
 const AppError = require('./utils/AppError');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
 const { apiLimiter } = require('./middlewares/rateLimiters');
@@ -49,6 +50,15 @@ app.use(hpp());
 app.use(apiLimiter);
 
 app.get('/health', (req, res) => res.json({ success: true, status: 'ok' }));
+
+app.get('/ready', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ success: true, status: 'ready' });
+  } catch (err) {
+    res.status(503).json({ success: false, status: 'not ready', error: 'Database unavailable' });
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/kyc', kycRoutes);
