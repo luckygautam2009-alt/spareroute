@@ -8,7 +8,7 @@ const customerIdParamRules = [
     .bail()
     .trim()
     .isLength({ min: 1, max: 50 }).withMessage('customerId must be 1-50 characters')
-    .matches(/^[A-Za-z0-9_-]+$/).withMessage('customerId contains invalid characters'),
+    .isUUID().withMessage('customerId must be a valid UUID'),
 ];
 
 const createCustomerRules = [
