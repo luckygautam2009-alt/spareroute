@@ -4,6 +4,11 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const create = asyncHandler(async (req, res) => {
   const { productId, quantity, deliveryAddress, deliveryLatitude, deliveryLongitude, mechanicId } = req.body;
+  const paymentMethod = req.body.paymentMethod || req.body.payment_method || 'cod';
+  if (paymentMethod === 'online') {
+    throw new AppError('Online payments are not available yet', 501);
+  }
+
   const client = await db.getClient();
 
   try {
@@ -59,6 +64,19 @@ const create = asyncHandler(async (req, res) => {
       [order.id, product.id, quantity, product.price_paise]
     );
 
+    const paymentAmountPaise = totalAmountPaise + serviceFeePaise;
+    await client.query(
+      `INSERT INTO payments (order_id, buyer_id, amount_paise, method, status)
+       VALUES ($1, $2, $3, 'cod', 'pending')`,
+      [order.id, req.user.id, paymentAmountPaise]
+    );
+
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, changed_at)
+       VALUES ($1, NULL, 'placed', $2, now())`,
+      [order.id, req.user.id]
+    );
+
     await client.query('COMMIT');
     res.status(201).json({ success: true, data: order });
   } catch (err) {
@@ -72,15 +90,53 @@ const create = asyncHandler(async (req, res) => {
 const updateStatus = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
-  const sellerResult = await db.query('SELECT id FROM sellers WHERE user_id = $1', [req.user.id]);
-  const seller = sellerResult.rows[0];
-  if (!seller) throw new AppError('Seller profile not found', 404);
-  const result = await db.query(
-    `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 AND seller_id = $3 RETURNING *`,
-    [status, orderId, seller.id]
-  );
-  if (result.rows.length === 0) throw new AppError('Order not found or does not belong to you', 404);
-  res.json({ success: true, data: result.rows[0] });
+  const client = await db.getClient();
+
+  try {
+    await client.query('BEGIN');
+    const sellerResult = await client.query('SELECT id FROM sellers WHERE user_id = $1', [req.user.id]);
+    const seller = sellerResult.rows[0];
+    if (!seller) throw new AppError('Seller profile not found', 404);
+
+    const orderResult = await client.query(
+      `SELECT id, status FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE`,
+      [orderId, seller.id]
+    );
+    const order = orderResult.rows[0];
+    if (!order) throw new AppError('Order not found or does not belong to you', 404);
+
+    const fromStatus = order.status;
+    let result;
+    if (status === 'rejected_by_seller' || status === 'cancelled') {
+      result = await client.query(
+        `UPDATE orders SET status = $1, cancelled_by = $2, updated_at = now() WHERE id = $3 AND seller_id = $4 RETURNING *`,
+        [status, req.user.id, orderId, seller.id]
+      );
+      await client.query(
+        `UPDATE payments SET status = 'cancelled', updated_at = now() WHERE order_id = $1`,
+        [orderId]
+      );
+    } else {
+      result = await client.query(
+        `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 AND seller_id = $3 RETURNING *`,
+        [status, orderId, seller.id]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, changed_at)
+       VALUES ($1, $2, $3, $4, now())`,
+      [orderId, fromStatus, status, req.user.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 const myOrders = asyncHandler(async (req, res) => {

@@ -7,6 +7,8 @@ const create = z.object({
   deliveryLatitude: z.number().optional(),
   deliveryLongitude: z.number().optional(),
   mechanicId: z.string().uuid().optional(),
+  paymentMethod: z.enum(['cod', 'online']).optional(),
+  payment_method: z.enum(['cod', 'online']).optional(),
 });
 
 const rateMechanic = z.object({
