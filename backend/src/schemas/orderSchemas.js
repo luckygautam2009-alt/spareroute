@@ -16,6 +16,10 @@ const rateMechanic = z.object({
   comment: z.string().max(500).optional(),
 });
 
+const updateStatus = z.object({
+  status: z.enum(['accepted_by_seller', 'rejected_by_seller', 'cancelled']),
+});
+
 const cancel = z.object({
   reason: z.string().max(300).optional(),
   cancelReason: z.string().max(300).optional(),
