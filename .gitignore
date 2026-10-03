@@ -44,3 +44,6 @@ pnpm-debug.log*
 
 # Project specific
 reference_card.json
+
+inquest-backend/src/utils/ocr_tool
+inquest-backend/test_*.jpg
