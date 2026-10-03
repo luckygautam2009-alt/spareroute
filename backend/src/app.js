@@ -18,6 +18,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const deliveryRoutes = require('./routes/deliveryRoutes');
 const internalRoutes = require('./routes/internalRoutes');
 const mechanicRoutes = require('./routes/mechanicRoutes');
+const returnRoutes = require('./routes/returnRoutes');
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/delivery', deliveryRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/mechanics', mechanicRoutes);
+app.use('/api/returns', returnRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler); // must be last
