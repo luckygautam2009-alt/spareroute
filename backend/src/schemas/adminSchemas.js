@@ -29,4 +29,14 @@ const listRefunds = z.object({
   limit: z.string().regex(/^\d+$/).optional(),
 });
 
-module.exports = { approveSeller, createRefund, processRefund, idParam, sellerIdParam, listRefunds };
+const orderIdParam = z.object({
+  orderId: z.string().uuid(),
+});
+
+const forceDeliver = z.object({
+  reason: z.string().min(10).max(300),
+  cashCollected: z.literal(true),
+});
+
+module.exports = { approveSeller, createRefund, processRefund, idParam, sellerIdParam, orderIdParam, forceDeliver, listRefunds };
+

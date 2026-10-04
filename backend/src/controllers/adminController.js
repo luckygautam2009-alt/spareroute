@@ -254,4 +254,63 @@ const listRefunds = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { listPendingSellers, approveSeller, createRefund, processRefund, listRefunds };
+const forceDeliver = asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  const { reason, cashCollected } = req.body;
+
+  if (cashCollected !== true) {
+    throw new AppError('cashCollected must be literally true', 400);
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(
+      `SELECT id, status FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const order = orderResult.rows[0];
+    if (!order) throw new AppError('Order not found', 404);
+
+    if (order.status !== 'out_for_delivery') {
+      throw new AppError(`Cannot force deliver order with status '${order.status}'. Allowed only for 'out_for_delivery'.`, 409);
+    }
+
+    const updatedResult = await client.query(
+      `UPDATE orders
+       SET status = 'delivered', delivered_at = now(), delivered_via = 'admin_override', updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [orderId]
+    );
+
+    await client.query(
+      `UPDATE payments SET status = 'succeeded', collected_at = now(), updated_at = now() WHERE order_id = $1`,
+      [orderId]
+    );
+
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, changed_at)
+       VALUES ($1, 'out_for_delivery', 'delivered', $2, now())`,
+      [orderId, req.user.id]
+    );
+
+    await client.query(
+      `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata)
+       VALUES ($1, 'order_force_delivered', 'order', $2, $3)`,
+      [req.user.id, orderId, JSON.stringify({ actor: req.user.id, reason, orderId, cashCollected: true })]
+    );
+
+    await client.query('COMMIT');
+    logger.info('Order force-delivered by admin', { adminId: req.user.id, orderId, reason });
+    res.json({ success: true, data: updatedResult.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+module.exports = { listPendingSellers, approveSeller, createRefund, processRefund, listRefunds, forceDeliver };
