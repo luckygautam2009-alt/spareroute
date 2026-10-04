@@ -57,11 +57,11 @@ function extractOrderIdHint(complaintText, entityHints = []) {
     .replace(/\border\b/gi, 'order');
 
   const patterns = [
-    /order\s*(?:id|no\.?|number|#)?\s*:?\s*(SR[-\s]?\d{1,8})/i,
+    /order\s*(?:id|no\.?|number|#)?\s*:?\s*\b(SR[-\s]?\d{1,8})\b/i,
     /order\s*(?:id|no\.?|number|#)?\s*:?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-    /(?:mera|meri)\s*(SR[-\s]?\d{1,8})\s*wala\s*order/i,
-    /#\s*(SR[-\s]?\d{1,8})/i,
-    /(SR[-\s]?\d{1,8})/i,
+    /(?:mera|meri)\s*\b(SR[-\s]?\d{1,8})\b\s*wala\s*order/i,
+    /#\s*\b(SR[-\s]?\d{1,8})\b/i,
+    /\b(SR[-\s]?\d{1,8})\b/i,
   ];
 
   for (const pattern of patterns) {

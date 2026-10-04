@@ -335,6 +335,26 @@ console.log('\n[spareRouteAdapter] normaliseOrderHint');
   assert('null returns null', normaliseOrderHint(null), null);
 }
 
+// ── extractOrderIdHint: word-boundary regex tests ────────────────────────────
+
+console.log('\n[extractOrderIdHint] Word-boundary false-positive guards');
+{
+  const { extractOrderIdHint } = require('../src/services/investigationEngine');
+  // Must NOT match — prefix characters mean these are not SR order numbers
+  assert('"USR-12" must not produce a hint', extractOrderIdHint('My user id is USR-12'), null);
+  assert('"MSR 5 part" must not produce a hint', extractOrderIdHint('I ordered MSR 5 part for my bike'), null);
+  assert('"XSSR-123" must not produce a hint', extractOrderIdHint('item code XSSR-123'), null);
+  assert('"SR-" with no digits must not produce a hint', extractOrderIdHint('contact SR- for help'), null);
+}
+
+console.log('\n[extractOrderIdHint] Word-boundary true-positive hits');
+{
+  const { extractOrderIdHint } = require('../src/services/investigationEngine');
+  assert('"order SR-12" extracts SR-00000012', extractOrderIdHint('My order SR-12 has not arrived'), 'SR-00000012');
+  assert('"#SR 00000012" extracts SR-00000012', extractOrderIdHint('Reference #SR 00000012 is delayed'), 'SR-00000012');
+  assert('"order number SR-00000005" extracts SR-00000005', extractOrderIdHint('My order number SR-00000005 is wrong'), 'SR-00000005');
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 
 console.log(`\n${'='.repeat(50)}`);
