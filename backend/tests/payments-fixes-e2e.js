@@ -439,6 +439,78 @@ async function queryDb(sql, params = []) {
   const concurrentResults = await Promise.all(concurrentCalls);
   check('10 concurrent calls completed without deadlock HTTP 500', concurrentResults.length === 10);
 
+  // ============================================================
+  console.log('\n--- ITEM 7: RETURN REQUEST DELIVERED_AT & MAX ATTEMPTS ---');
+  // ============================================================
+  // Test 1: If delivered_at is NULL respond 409 (do not fall back to updated_at)
+  const prod7 = await call('create product for return rules test', 'POST', '/api/products', {
+    name: 'Spark Plug Set ' + rnd(),
+    oemPartNumber: 'FIX-RET-' + rnd(),
+    brand: 'FixBrand',
+    category: 'engine',
+    pricePaise: 45000,
+    stockQuantity: 10,
+  }, S.tok, 201);
+  const pId7 = find(prod7, 'id');
+
+  const ordRet = await call('place order for return rules', 'POST', '/api/orders', {
+    productId: pId7,
+    quantity: 1,
+    deliveryAddress: '700 Return Rules Way',
+  }, bTok, 201);
+  const ordRetId = find(ordRet, 'id');
+
+  await call('seller accepts ordRet', 'PATCH', `/api/orders/${ordRetId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('rider claims ordRet', 'PATCH', `/api/delivery/${ordRetId}/claim`, null, dTok, 200);
+  await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordRetId}/status`, { status: 'out_for_delivery' }, dTok, 200);
+  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordRetId}/status`, { status: 'delivered' }, dTok, 200);
+
+  // Manually null out delivered_at in database while keeping status 'delivered'
+  await queryDb('UPDATE orders SET delivered_at = NULL WHERE id = $1', [ordRetId]);
+
+  // Attempt return request with delivered_at = NULL -> must respond 409
+  const nullDeliveredRet = await call('return request with null delivered_at fails (409)', 'POST', `/api/orders/${ordRetId}/return`, {
+    reason: 'Trying return without delivered_at',
+  }, bTok, 409);
+  check('return request with null delivered_at returned 409', nullDeliveredRet && (nullDeliveredRet.error || nullDeliveredRet.message));
+
+  // Restore delivered_at timestamp
+  await queryDb('UPDATE orders SET delivered_at = NOW() WHERE id = $1', [ordRetId]);
+
+  // Test 2: env RETURN_MAX_ATTEMPTS (default 2) - at most that many return requests per order (all statuses)
+  // Attempt 1: Valid return request
+  const ret1 = await call('first return request succeeds (attempt 1/2)', 'POST', `/api/orders/${ordRetId}/return`, {
+    reason: 'First defective part',
+  }, bTok, 201);
+  const ret1Id = find(ret1, 'id');
+  check('first return request created', !!ret1Id);
+
+  // Seller rejects return request 1
+  await call('seller rejects return request 1', 'PATCH', `/api/returns/${ret1Id}/review`, {
+    decision: 'rejected',
+    note: 'Rejected first return attempt',
+  }, S.tok, 200);
+
+  // Attempt 2: Second return request succeeds
+  const ret2 = await call('second return request succeeds (attempt 2/2)', 'POST', `/api/orders/${ordRetId}/return`, {
+    reason: 'Second attempt with photos',
+  }, bTok, 201);
+  const ret2Id = find(ret2, 'id');
+  check('second return request created', !!ret2Id);
+
+  // Seller rejects return request 2
+  await call('seller rejects return request 2', 'PATCH', `/api/returns/${ret2Id}/review`, {
+    decision: 'rejected',
+    note: 'Rejected second return attempt',
+  }, S.tok, 200);
+
+  // Attempt 3: Exceeds RETURN_MAX_ATTEMPTS (default 2) -> must respond 409
+  const ret3 = await call('third return request rejected with 409 (max attempts reached)', 'POST', `/api/orders/${ordRetId}/return`, {
+    reason: 'Third attempt should be rejected',
+  }, bTok, 409);
+  check('third return request rejected beyond max attempts (409)', ret3 && (ret3.error || ret3.message));
+
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();
+

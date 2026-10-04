@@ -304,12 +304,28 @@ const requestReturn = asyncHandler(async (req, res) => {
     if (order.status !== 'delivered') {
       throw new AppError('Order cannot be returned unless delivered', 409);
     }
+    if (!order.delivered_at) {
+      throw new AppError('Order delivery timestamp is missing', 409);
+    }
 
     const returnWindowDays = parseInt(process.env.RETURN_WINDOW_DAYS, 10) || 7;
     const windowMs = returnWindowDays * 24 * 60 * 60 * 1000;
-    const deliveredAtTime = new Date(order.delivered_at || order.updated_at).getTime();
+    const deliveredAtTime = new Date(order.delivered_at).getTime();
     if (Date.now() - deliveredAtTime > windowMs) {
       throw new AppError(`Return window of ${returnWindowDays} day(s) has expired`, 400);
+    }
+
+    const returnMaxAttempts = !isNaN(parseInt(process.env.RETURN_MAX_ATTEMPTS, 10))
+      ? parseInt(process.env.RETURN_MAX_ATTEMPTS, 10)
+      : 2;
+
+    const returnCountResult = await client.query(
+      `SELECT COUNT(*)::int AS count FROM return_requests WHERE order_id = $1`,
+      [orderId]
+    );
+    const returnCount = returnCountResult.rows[0]?.count || 0;
+    if (returnCount >= returnMaxAttempts) {
+      throw new AppError(`Maximum return request attempts (${returnMaxAttempts}) reached for this order`, 409);
     }
 
     const activeReturnResult = await client.query(
