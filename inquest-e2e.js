@@ -27,8 +27,11 @@ function check(label, cond, extra) {
   console.log(`${cond ? 'PASS' : 'FAIL'}       ${label}${cond ? '' : '  -> ' + JSON.stringify(extra).slice(0, 300)}`);
 }
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const ADMIN_PHONE = process.env.E2E_ADMIN_PHONE || '9000000001';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@12345678';
+
 (async () => {
-  const aLogin = await call('admin login (SpareRoute)', SR, 'POST', '/api/auth/login', { phone: '9000000001', password: 'Admin@12345678' });
+  const aLogin = await call('admin login (SpareRoute)', SR, 'POST', '/api/auth/login', { phone: ADMIN_PHONE, password: ADMIN_PASSWORD });
   const aTok = find(aLogin, 'accessToken');
   const bReg = await call('register buyer (SpareRoute)', SR, 'POST', '/api/auth/register', { fullName: 'IQ Buyer', phone: '8' + rnd() + '2', password: 'Test@12345678', role: 'buyer' });
   const bTok = find(bReg, 'accessToken');
