@@ -168,8 +168,7 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
     }
 
     case 'POLICY6': // Damaged product claim (escalation required)
-    case 'POLICY8': // Wrong product claim (escalation required)
-    case 'POLICY10': { // Delivered not received (escalation required)
+    case 'POLICY8': { // Wrong product claim (escalation required)
       if (focusOrder) {
         return {
           satisfied: true,
@@ -179,6 +178,29 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
             'Customer claim requires physical/carrier verification prior to resolution',
           ],
           details: { orderId: focusOrder.id, policyRequiresEscalation: true },
+        };
+      }
+      return { satisfied: false, reason: 'No verified order found for product issue claim' };
+    }
+
+    case 'POLICY10': { // Delivered not received (escalation required)
+      if (focusOrder) {
+        const pod = focusOrder.proofOfDelivery;
+        const podEvidence = pod && pod.method === 'otp'
+          ? `OTP verified at ${pod.verifiedAt || 'unknown time'}`
+          : pod && pod.method === 'admin_override'
+          ? 'no OTP proof: admin override'
+          : 'no proof on record (legacy order)';
+
+        return {
+          satisfied: true,
+          evidenceUsed: [
+            `Verified order ${focusOrder.id} exists for customer ${customer.id}`,
+            `Current order status is "${focusOrder.status}"`,
+            `Proof of delivery: ${podEvidence}`,
+            'Customer claim requires physical/carrier verification prior to resolution',
+          ],
+          details: { orderId: focusOrder.id, policyRequiresEscalation: true, proofOfDelivery: podEvidence },
         };
       }
       return { satisfied: false, reason: 'No verified order found for product issue claim' };
