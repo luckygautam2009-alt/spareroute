@@ -63,7 +63,6 @@ const updateStatus = asyncHandler(async (req, res) => {
     const validTransitions = {
       accepted_by_seller: ['out_for_delivery'],
       out_for_delivery: ['delivered'],
-      delivered: ['returned'],
     };
     const allowedNext = validTransitions[current.status] || [];
     if (!allowedNext.includes(status)) {

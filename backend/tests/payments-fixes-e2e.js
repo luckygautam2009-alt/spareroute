@@ -249,6 +249,27 @@ async function queryDb(sql, params = []) {
   await call('seller reject returned order -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'rejected_by_seller' }, S.tok, 409);
   await call('seller cancel returned order -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
 
+  // ============================================================
+  console.log('\n--- ITEM 3: DELIVERY BYPASS PREVENTION ---');
+  // ============================================================
+  // Test: a delivery partner cannot set 'returned'
+  const ordBypass = await call('place order for bypass test', 'POST', '/api/orders', {
+    productId: pId2,
+    quantity: 1,
+    deliveryAddress: '500 Bypass Ave',
+  }, bTok, 201);
+  const ordBypassId = find(ordBypass, 'id');
+  await call('seller accepts ordBypass', 'PATCH', `/api/orders/${ordBypassId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('rider claims ordBypass', 'PATCH', `/api/delivery/${ordBypassId}/claim`, null, dTok, 200);
+  await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'out_for_delivery' }, dTok, 200);
+  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'delivered' }, dTok, 200);
+
+  // Delivery partner tries to set 'returned' -> must fail (400)
+  await call('rider cannot set returned -> 400', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'returned' }, dTok, 400);
+
+  const orderAfterBypass = await queryDb('SELECT status FROM orders WHERE id = $1', [ordBypassId]);
+  check("order remains 'delivered' after bypass attempt", orderAfterBypass[0]?.status === 'delivered', orderAfterBypass);
+
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();
