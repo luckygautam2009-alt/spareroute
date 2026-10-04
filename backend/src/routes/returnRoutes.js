@@ -9,7 +9,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get('/', returnController.listReturns);
-router.patch('/:id/review', requireRole('seller'), validate(schemas.reviewReturn), returnController.reviewReturn);
-router.patch('/:id/received', requireRole('seller'), returnController.markReceived);
+router.patch('/:id/review', requireRole('seller'), validate(schemas.idParam, 'params'), validate(schemas.reviewReturn), returnController.reviewReturn);
+router.patch('/:id/received', requireRole('seller'), validate(schemas.idParam, 'params'), returnController.markReceived);
 
 module.exports = router;
