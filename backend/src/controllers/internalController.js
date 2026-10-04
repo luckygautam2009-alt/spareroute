@@ -23,7 +23,7 @@ const getCustomerContext = asyncHandler(async (req, res) => {
   const deliverySlaHours = parseInt(process.env.DELIVERY_SLA_HOURS, 10) || 48;
 
   const ordersResult = await db.query(
-    `SELECT o.id, o.status, o.total_amount_paise AS amount, o.service_fee_paise,
+    `SELECT o.id, o.order_number, o.status, o.total_amount_paise AS amount, o.service_fee_paise,
             o.delivery_address, o.mechanic_id, o.mechanic_rating,
             o.delivered_at, o.cancelled_by, o.cancel_reason,
             o.created_at AS "placedAt", o.updated_at AS "updatedAt",
@@ -89,6 +89,7 @@ const getCustomerContext = asyncHandler(async (req, res) => {
 
     return {
       id: o.id,
+      orderNumber: o.order_number,
       customerId: userId,
       product: o.productName || 'Unknown product',
       amount: Number(o.amount) / 100,

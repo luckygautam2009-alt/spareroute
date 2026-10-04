@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
 
 const listAvailable = asyncHandler(async (req, res) => {
   const result = await db.query(
-    `SELECT o.id, o.delivery_address, o.delivery_latitude, o.delivery_longitude,
+    `SELECT o.id, o.order_number, o.delivery_address, o.delivery_latitude, o.delivery_longitude,
             o.total_amount_paise, o.created_at, s.business_name, s.city
      FROM orders o JOIN sellers s ON s.id = o.seller_id
      WHERE o.status = 'accepted_by_seller' AND o.delivery_partner_id IS NULL
