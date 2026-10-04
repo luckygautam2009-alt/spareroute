@@ -4,12 +4,15 @@ const validate = require('../middlewares/validate');
 const schemas = require('../schemas/orderSchemas');
 const requireAuth = require('../middlewares/auth');
 const requireRole = require('../middlewares/rbac');
+const { deliveryOtpLimiter } = require('../middlewares/rateLimiters');
 
 const router = express.Router();
 router.use(requireAuth);
 
 router.post('/', requireRole('buyer'), validate(schemas.create), orderController.create);
 router.get('/my', requireRole('buyer'), orderController.myOrders);
+router.get('/:orderId/delivery-otp', requireRole('buyer'), validate(schemas.orderIdParam, 'params'), deliveryOtpLimiter, orderController.getDeliveryOtp);
+router.post('/:orderId/delivery-otp/regenerate', requireRole('buyer'), validate(schemas.orderIdParam, 'params'), deliveryOtpLimiter, orderController.regenerateDeliveryOtp);
 router.patch('/:orderId/status', requireRole('seller'), validate(schemas.orderIdParam, 'params'), validate(schemas.updateStatus), orderController.updateStatus);
 router.patch('/:orderId/rate-mechanic', requireRole('buyer'), validate(schemas.orderIdParam, 'params'), validate(schemas.rateMechanic), orderController.rateMechanic);
 router.post('/:orderId/cancel', requireRole('buyer'), validate(schemas.orderIdParam, 'params'), validate(schemas.cancel), orderController.cancelOrder);

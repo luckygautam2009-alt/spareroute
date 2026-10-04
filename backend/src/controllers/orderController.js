@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
+const { decryptOtp, generateOtp, encryptOtp } = require('../utils/deliveryOtp');
 
 const create = asyncHandler(async (req, res) => {
   const { productId, quantity, deliveryAddress, deliveryLatitude, deliveryLongitude, mechanicId } = req.body;
@@ -363,4 +364,98 @@ const requestReturn = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { create, updateStatus, myOrders, rateMechanic, cancelOrder, requestReturn };
+const getDeliveryOtp = asyncHandler(async (req, res) => {
+  const orderId = req.params.orderId || req.params.id;
+  const orderResult = await db.query(
+    `SELECT id, buyer_id, status FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  const order = orderResult.rows[0];
+  if (!order || order.buyer_id !== req.user.id) {
+    throw new AppError('Order not found', 404);
+  }
+  if (order.status !== 'out_for_delivery') {
+    throw new AppError('Delivery code is only available when order is out for delivery', 409);
+  }
+
+  const otpResult = await db.query(
+    `SELECT otp_ciphertext FROM order_delivery_otps WHERE order_id = $1`,
+    [orderId]
+  );
+  const otpRow = otpResult.rows[0];
+  if (!otpRow || !otpRow.otp_ciphertext) {
+    throw new AppError('Delivery code not found or already verified', 409);
+  }
+
+  const otp = decryptOtp(otpRow.otp_ciphertext);
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true, otp, data: { otp } });
+});
+
+const regenerateDeliveryOtp = asyncHandler(async (req, res) => {
+  const orderId = req.params.orderId || req.params.id;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const orderResult = await client.query(
+      `SELECT id, buyer_id, status FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const order = orderResult.rows[0];
+    if (!order || order.buyer_id !== req.user.id) {
+      throw new AppError('Order not found', 404);
+    }
+    if (order.status !== 'out_for_delivery') {
+      throw new AppError('Delivery code can only be regenerated when order is out for delivery', 409);
+    }
+
+    const otpResult = await client.query(
+      `SELECT order_id, otp_ciphertext, failed_attempts, locked_at, regenerated_count
+       FROM order_delivery_otps WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const otpRow = otpResult.rows[0];
+    if (!otpRow) {
+      throw new AppError('Delivery code record not found', 409);
+    }
+    if (otpRow.locked_at !== null || otpRow.failed_attempts >= 5) {
+      throw new AppError('Cannot regenerate delivery code because order is locked', 409);
+    }
+    if (otpRow.regenerated_count >= 3) {
+      throw new AppError('Maximum regeneration limit of 3 reached for this order', 409);
+    }
+
+    const newOtp = generateOtp();
+    const newCiphertext = encryptOtp(newOtp);
+
+    await client.query(
+      `UPDATE order_delivery_otps
+       SET otp_ciphertext = $1,
+           generated_at = now(),
+           failed_attempts = 0,
+           regenerated_count = regenerated_count + 1
+       WHERE order_id = $2`,
+      [newCiphertext, orderId]
+    );
+
+    await client.query('COMMIT');
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, otp: newOtp, data: { otp: newOtp } });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+module.exports = {
+  create,
+  updateStatus,
+  myOrders,
+  rateMechanic,
+  cancelOrder,
+  requestReturn,
+  getDeliveryOtp,
+  regenerateDeliveryOtp,
+};
