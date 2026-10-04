@@ -152,3 +152,78 @@ Both services handle `SIGTERM` and `SIGINT`:
 1. Inquest supports both `GEMINI_API_KEY` and `GEMINI_API_KEY_BACKUP`.
 2. Set the newly generated key as `GEMINI_API_KEY_BACKUP` first, test it, then swap it to primary.
 3. Restart Inquest backend without downtime.
+
+---
+
+## 7. Continuous Integration (CI)
+
+SpareRoute uses GitHub Actions (`.github/workflows/ci.yml`) to automatically validate code quality, dependencies, security, and end-to-end functionality on every push to `main` and pull request.
+
+### What Runs in CI
+1. **Static Syntax Check (`static`)**: Runs `node --check` across all JavaScript files in `backend/src` and `inquest-backend/src`.
+2. **Dependency Audit (`audit`)**: Runs non-blocking `npm audit --omit=dev --audit-level=high` reports on both backend services.
+3. **Secret Scanner (`secrets-scan`)**: Executes Gitleaks with full repository history (`fetch-depth: 0`) and `.gitleaksignore` rules for documentation templates.
+4. **Integration & E2E Test Suite (`test`)**:
+   - Boots a health-checked PostgreSQL 16 service container.
+   - Creates throwaway databases (`spareroute_ci` and `inquest_ci`).
+   - Generates masked ephemeral runtime secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_API_KEY`, and a random `E2E_ADMIN_PASSWORD`).
+   - Applies migrations on both fresh databases and seeds a CI admin account via `createAdmin.js`.
+   - Boots SpareRoute Backend (port 4000) and Inquest Backend (port 5001) in the background, verifying readiness via `/ready` retry loops.
+   - Executes all test suites with isolated steps:
+     - `node mech-e2e.js`
+     - `node backend/tests/payments-e2e.js`
+     - `node backend/tests/payments-fixes-e2e.js`
+     - `node inquest-e2e.js`
+     - `node inquest-backend/tests/admin_profile_test.js`
+     - `node inquest-backend/tests/hardening_e2e.js`
+     - `node e2e.js` (automatically runs if `GEMINI_API_KEY` secret is configured; cleanly skips otherwise).
+   - Captures and uploads server logs (`backend.log`, `inquest-backend.log`) as workflow artifacts on test failures.
+
+### Adding the `GEMINI_API_KEY` Secret in GitHub UI
+To enable the full AI investigation test (`e2e.js`) in CI:
+1. In the GitHub repository, navigate to **Settings** > **Secrets and variables** > **Actions**.
+2. Click **New repository secret**.
+3. Set **Name** to `GEMINI_API_KEY`.
+4. Paste your Google Gemini API key into **Secret**.
+5. Click **Add secret**.
+*(Note: Pull requests from external forks do not have access to repository secrets; the workflow safely skips the Gemini-dependent test on unauthenticated PRs while passing all other suites).*
+
+### Reproducing a CI Run Locally
+To replicate the full CI test sequence on your local machine:
+```bash
+# 1. Ensure Postgres is running and create test databases
+psql -U postgres -c "CREATE DATABASE spareroute_ci;" -c "CREATE DATABASE inquest_ci;"
+
+# 2. Run migrations on both databases
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci npm --prefix backend run migrate
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci npm --prefix inquest-backend run migrate
+
+# 3. Create test admin account
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci \
+  node backend/src/db/createAdmin.js "CI Admin" "9000000001" "Admin@12345678"
+
+# 4. Start SpareRoute backend (port 4000)
+PORT=4000 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci \
+  JWT_ACCESS_SECRET="ci_test_secret_at_least_32_characters_long" \
+  JWT_REFRESH_SECRET="ci_test_refresh_at_least_32_characters_long" \
+  INTERNAL_API_KEY="ci_test_internal_key_32_chars_long" \
+  RATE_LIMIT_MAX_REQUESTS=10000 AUTH_RATE_LIMIT_MAX=1000 \
+  node backend/src/server.js &
+
+# 5. Start Inquest backend (port 5001)
+PORT=5001 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci \
+  JWT_ACCESS_SECRET="ci_test_secret_at_least_32_characters_long" \
+  SPAREROUTE_INTERNAL_API_KEY="ci_test_internal_key_32_chars_long" \
+  SPAREROUTE_API_URL=http://localhost:4000 \
+  node inquest-backend/src/app.js &
+
+# 6. Run test suites
+node mech-e2e.js
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/tests/payments-e2e.js
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/tests/payments-fixes-e2e.js
+node inquest-e2e.js
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci node inquest-backend/tests/admin_profile_test.js
+node inquest-backend/tests/hardening_e2e.js
+node e2e.js
+```
+
