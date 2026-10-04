@@ -9,5 +9,8 @@ const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
 router.get('/sellers/pending', adminController.listPendingSellers);
 router.patch('/sellers/:sellerId/approve', validate(schemas.approveSeller), adminController.approveSeller);
+router.get('/refunds', adminController.listRefunds);
+router.post('/refunds', validate(schemas.createRefund), adminController.createRefund);
+router.patch('/refunds/:id/process', validate(schemas.processRefund), adminController.processRefund);
 
 module.exports = router;

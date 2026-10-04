@@ -49,28 +49,57 @@ const claimOrder = asyncHandler(async (req, res) => {
 const updateStatus = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
-  const currentResult = await db.query(
-    `SELECT status FROM orders WHERE id = $1 AND delivery_partner_id = $2`,
-    [orderId, req.user.id]
-  );
-  const current = currentResult.rows[0];
-  if (!current) throw new AppError('Order not found or not assigned to you', 404);
+  const client = await db.getClient();
 
-  const validTransitions = {
-    accepted_by_seller: ['out_for_delivery'],
-    out_for_delivery: ['delivered'],
-    delivered: ['returned'],
-  };
-  const allowedNext = validTransitions[current.status] || [];
-  if (!allowedNext.includes(status)) {
-    throw new AppError(`Cannot move order from '${current.status}' to '${status}'`, 400);
+  try {
+    await client.query('BEGIN');
+    const currentResult = await client.query(
+      `SELECT status FROM orders WHERE id = $1 AND delivery_partner_id = $2 FOR UPDATE`,
+      [orderId, req.user.id]
+    );
+    const current = currentResult.rows[0];
+    if (!current) throw new AppError('Order not found or not assigned to you', 404);
+
+    const validTransitions = {
+      accepted_by_seller: ['out_for_delivery'],
+      out_for_delivery: ['delivered'],
+    };
+    const allowedNext = validTransitions[current.status] || [];
+    if (!allowedNext.includes(status)) {
+      throw new AppError(`Cannot move order from '${current.status}' to '${status}'`, 400);
+    }
+
+    let result;
+    if (status === 'delivered') {
+      result = await client.query(
+        `UPDATE orders SET status = $1, delivered_at = now(), updated_at = now() WHERE id = $2 AND delivery_partner_id = $3 RETURNING *`,
+        [status, orderId, req.user.id]
+      );
+      await client.query(
+        `UPDATE payments SET status = 'succeeded', collected_at = now(), updated_at = now() WHERE order_id = $1`,
+        [orderId]
+      );
+    } else {
+      result = await client.query(
+        `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 AND delivery_partner_id = $3 RETURNING *`,
+        [status, orderId, req.user.id]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, changed_at)
+       VALUES ($1, $2, $3, $4, now())`,
+      [orderId, current.status, status, req.user.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const result = await db.query(
-    `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 AND delivery_partner_id = $3 RETURNING *`,
-    [status, orderId, req.user.id]
-  );
-  res.json({ success: true, data: result.rows[0] });
 });
 
 const myDeliveries = asyncHandler(async (req, res) => {

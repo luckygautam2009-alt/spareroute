@@ -20,9 +20,12 @@ const getCustomerContext = asyncHandler(async (req, res) => {
     throw new AppError(`Customer with ID ${userId} not found`, 404);
   }
 
+  const deliverySlaHours = parseInt(process.env.DELIVERY_SLA_HOURS, 10) || 48;
+
   const ordersResult = await db.query(
     `SELECT o.id, o.status, o.total_amount_paise AS amount, o.service_fee_paise,
             o.delivery_address, o.mechanic_id, o.mechanic_rating,
+            o.delivered_at, o.cancelled_by, o.cancel_reason,
             o.created_at AS "placedAt", o.updated_at AS "updatedAt",
             oi.product_id, p.name AS "productName", s.business_name AS "sellerName"
      FROM orders o
@@ -34,32 +37,118 @@ const getCustomerContext = asyncHandler(async (req, res) => {
     [userId]
   );
 
-  const payments = ordersResult.rows.map((o) => ({
-    id: `PAY-${o.id}`,
-    orderId: o.id,
-    customerId: userId,
-    amount: Number(o.amount) / 100,
-    status: ['delivered', 'accepted_by_seller', 'out_for_delivery'].includes(o.status)
+  const historyResult = await db.query(
+    `SELECT h.order_id, h.from_status, h.to_status, h.changed_at
+     FROM order_status_history h
+     JOIN orders o ON o.id = h.order_id
+     WHERE o.buyer_id = $1
+     ORDER BY h.changed_at ASC`,
+    [userId]
+  );
+
+  const returnsResult = await db.query(
+    `SELECT r.id, r.order_id, r.buyer_id, r.reason, r.status, r.seller_note,
+            r.created_at, r.updated_at
+     FROM return_requests r
+     WHERE r.buyer_id = $1
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+
+  const paymentsResult = await db.query(
+    `SELECT p.id, p.order_id, p.buyer_id, p.amount_paise, p.method, p.status,
+            p.collected_at, p.created_at, p.updated_at
+     FROM payments p
+     WHERE p.buyer_id = $1
+     ORDER BY p.created_at DESC`,
+    [userId]
+  );
+
+  const refundsResult = await db.query(
+    `SELECT r.id, r.order_id, r.payment_id, r.return_request_id, r.amount_paise,
+            r.status, r.reason, r.created_at, r.processed_at,
+            p.buyer_id AS customer_id
+     FROM refunds r
+     JOIN payments p ON p.id = r.payment_id
+     WHERE p.buyer_id = $1
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+
+  const orders = ordersResult.rows.map((o) => {
+    const orderReturns = returnsResult.rows.filter((r) => r.order_id === o.id);
+    const activeReturn = orderReturns.find((r) => ['requested', 'approved', 'received'].includes(r.status));
+    const latestReturn = orderReturns[0] || null;
+
+    const historyForOrder = historyResult.rows
+      .filter((h) => h.order_id === o.id)
+      .map((h) => ({ from: h.from_status, to: h.to_status, at: h.changed_at }));
+
+    const placedDate = new Date(o.placedAt);
+    const expectedDeliveryBy = new Date(placedDate.getTime() + deliverySlaHours * 60 * 60 * 1000).toISOString();
+
+    return {
+      id: o.id,
+      customerId: userId,
+      product: o.productName || 'Unknown product',
+      amount: Number(o.amount) / 100,
+      status: o.status,
+      deliveredAt: o.delivered_at || null,
+      returnRequested: Boolean(activeReturn),
+      returnStatus: activeReturn ? activeReturn.status : (latestReturn ? latestReturn.status : null),
+      expectedDeliveryBy,
+      statusHistory: historyForOrder,
+      cancelReason: o.cancel_reason || null,
+    };
+  });
+
+  const payments = paymentsResult.rows.map((p) => ({
+    id: p.id,
+    orderId: p.order_id,
+    customerId: p.buyer_id,
+    amount: Number(p.amount_paise) / 100,
+    status: ['succeeded', 'partially_refunded', 'refunded'].includes(p.status)
       ? 'success'
-      : o.status === 'cancelled' || o.status === 'rejected_by_seller'
+      : p.status === 'cancelled'
       ? 'failed'
       : 'pending',
-    timestamp: o.placedAt,
+    timestamp: p.created_at,
+    rawStatus: p.status,
+    method: p.method,
+    collectedAt: p.collected_at || null,
   }));
 
-  const orders = ordersResult.rows.map((o) => ({
-    id: o.id,
-    customerId: userId,
-    product: o.productName || 'Unknown product',
-    amount: Number(o.amount) / 100,
-    status: o.status,
-    deliveredAt: o.status === 'delivered' ? o.updatedAt : null,
-    returnRequested: false,
+  const refunds = refundsResult.rows.map((r) => ({
+    id: r.id,
+    orderId: r.order_id,
+    customerId: r.customer_id,
+    amount: Number(r.amount_paise) / 100,
+    status: r.status,
+    reason: r.reason,
+    initiatedAt: r.created_at,
+    completedAt: r.processed_at || null,
+  }));
+
+  const returnRequests = returnsResult.rows.map((r) => ({
+    id: r.id,
+    orderId: r.order_id,
+    customerId: r.buyer_id,
+    reason: r.reason,
+    status: r.status,
+    sellerNote: r.seller_note || null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   }));
 
   res.json({
     success: true,
-    data: { customer, orders, payments, refunds: [], securityEvents: [] },
+    data: {
+      customer,
+      orders,
+      payments,
+      refunds,
+      returnRequests,
+    },
   });
 });
 

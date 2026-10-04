@@ -12,5 +12,7 @@ router.post('/', requireRole('buyer'), validate(schemas.create), orderController
 router.get('/my', requireRole('buyer'), orderController.myOrders);
 router.patch('/:orderId/status', requireRole('seller'), validate(schemas.updateStatus), orderController.updateStatus);
 router.patch('/:orderId/rate-mechanic', requireRole('buyer'), validate(schemas.rateMechanic), orderController.rateMechanic);
+router.post('/:orderId/cancel', requireRole('buyer'), validate(schemas.cancel), orderController.cancelOrder);
+router.post('/:orderId/return', requireRole('buyer'), validate(schemas.createReturn), orderController.requestReturn);
 
 module.exports = router;
