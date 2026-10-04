@@ -9,7 +9,10 @@
  * 4. No Fabrication: Missing evidence => HUMAN_ESCALATION with clear statement.
  * 5. Security/Unauthorized Activity: NEVER AUTO_RESOLVE under any circumstance.
  * 6. High Confidence alone NEVER triggers AUTO_RESOLVE without satisfied evidence & policy.
+ * 7. AUTO_RESOLVE requires an exact (non-inferred) order match.
  */
+
+const { evaluatePolicyConditions } = require('./policyEngine');
 
 const PHYSICAL_VERIFICATION_INTENTS = [
   'product_issue',
@@ -78,76 +81,62 @@ function decide(complaintText, analysis, rootCause, investigation) {
     };
   }
 
-  // Check the 6 AUTO_RESOLVE criteria:
-  // 1. Customer verified (checked in investigation.found)
-  // 2. Order verified for customer (if order-related intent)
+  // Order requirement check
   const orderRequired = ['payment/billing', 'payment', 'cancellation', 'refund/return', 'refund', 'order_status/delay'].includes(intent);
   const orderVerified = investigation.orderVerified && investigation.focusOrder?.customerId === investigation.customer.id;
 
-  // 3. Matched policy exists (verified above)
-  // 4. Policy conditions satisfied by verified evidence
+  // CUSTOMER_CONFIRM when order is required but not exactly identified
+  if (orderRequired && (!orderVerified || investigation.orderInferred)) {
+    // Build list of this customer's recent orders for the questionsForCustomer
+    const recentOrders = (investigation.orders || []).slice(0, 10).map((o) => ({
+      orderNumber: o.orderNumber || null,
+      product: o.product,
+      status: o.status,
+    }));
+
+    if (!orderVerified) {
+      // No order found at all (0 orders, or 2+ with no hint)
+      return {
+        decision: 'CUSTOMER_CONFIRM',
+        reasoning: 'Order is required for this intent but could not be identified. Asking the customer to specify their order number.',
+        confidence,
+        needsInfo: true,
+        questionsForCustomer: [
+          `Could you please provide your order number (e.g. SR-00000001)? Here are your recent orders:`,
+          ...recentOrders.map((o) => `  • ${o.orderNumber || 'N/A'} — ${o.product} (${o.status})`),
+        ],
+        sentimentNote: `Note: Decision based on missing order identification, not sentiment (${analysis.sentiment}).`,
+      };
+    }
+
+    // Order was inferred (single order or "relevant" fallback) — never AUTO_RESOLVE
+    // but can proceed to CUSTOMER_CONFIRM with the inferred order for confirmation
+    // Fall through to policy evaluation but block AUTO_RESOLVE below
+  }
+
+  // Evaluate policy conditions using policyEngine as the single source of truth
+  const policy = (investigation.policies || []).find((p) => p.id === matchedPolicy);
   let evidenceSatisfied = true;
   let policyFailureReason = '';
 
-  if (matchedPolicy === 'POLICY7') {
-    // Duplicate payment: order verified, amount known, >= 2 successful payments
-    const successfulPayments = (investigation.focusPayments || []).filter(
-      (p) => (p.status === 'success' || p.gatewayStatus === 'success') && p.customerId === investigation.customer.id
-    );
-    if (!orderVerified) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Missing verified customer order.';
-    } else if (successfulPayments.length < 2) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Payment gateway records do not confirm multiple successful charges for this order.';
+  if (policy) {
+    const evalResult = evaluatePolicyConditions(policy, investigation, analysis);
+    evidenceSatisfied = evalResult.satisfied === true;
+    if (!evidenceSatisfied) {
+      policyFailureReason = evalResult.reason || 'Policy conditions not satisfied by verified evidence.';
     }
-  } else if (matchedPolicy === 'POLICY1') {
-    // Mismatched payment status
-    const deductedFailed = (investigation.focusPayments || investigation.payments || []).filter(
-      (p) => p.gatewayStatus === 'success' && p.localStatus === 'failed'
-    );
-    if (deductedFailed.length === 0) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'No gateway deduction with failed local order found.';
-    }
-  } else if (matchedPolicy === 'POLICY2') {
-    // Pending refund: refund record exists and status === 'pending'
-    const pendingRefund = (investigation.focusRefunds || investigation.refunds || []).find(
-      (r) => r.customerId === investigation.customer.id && r.status === 'pending'
-    );
-    if (!pendingRefund) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'No pending refund record found in backend.';
-    }
-  } else if (matchedPolicy === 'POLICY4') {
-    // Return received refund eligibility
-    if (!investigation.focusOrder || (investigation.focusOrder.status !== 'returned' && investigation.focusOrder.returnStatus !== 'item_received_warehouse')) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Order is not verified as returned in logistics system.';
-    }
-  } else if (matchedPolicy === 'POLICY5') {
-    // Cancelled order
-    if (!investigation.focusOrder || investigation.focusOrder.status !== 'cancelled') {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Order is not recorded as cancelled in backend.';
-    }
-  } else if (matchedPolicy === 'POLICY11') {
-    // Order in-transit status
-    if (!investigation.focusOrder || (investigation.focusOrder.status !== 'in_transit' && !investigation.focusOrder.courierTracking)) {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Order is not in transit.';
-    }
-  } else if (matchedPolicy === 'POLICY3') {
-    // Return window
-    if (!investigation.focusOrder || investigation.focusOrder.status !== 'delivered') {
-      evidenceSatisfied = false;
-      policyFailureReason = 'Order is not delivered or return already requested.';
-    }
+  } else {
+    evidenceSatisfied = false;
+    policyFailureReason = `Policy ${matchedPolicy} not found in database.`;
   }
 
-  // 5. Confidence threshold: >= 85
-  // 6. Category safe for automation (not security, not damage dispute)
-  if (confidence >= 85 && evidenceSatisfied && (orderVerified || !orderRequired)) {
+  // AUTO_RESOLVE: requires exact (non-inferred) match, high confidence, and satisfied evidence
+  if (
+    confidence >= 85 &&
+    evidenceSatisfied &&
+    (orderVerified || !orderRequired) &&
+    !investigation.orderInferred
+  ) {
     return {
       decision: 'AUTO_RESOLVE',
       reasoning: `High confidence (${confidence}%) and verified evidence satisfies policy ${matchedPolicy} conditions for customer ${investigation.customer.id}. Safe for automated resolution.`,
@@ -156,7 +145,7 @@ function decide(complaintText, analysis, rootCause, investigation) {
     };
   }
 
-  // Medium confidence or needs customer approval (e.g. return initiation or cancellation verification)
+  // Medium confidence or needs customer approval
   if (confidence >= 60 && evidenceSatisfied) {
     return {
       decision: 'CUSTOMER_CONFIRM',
