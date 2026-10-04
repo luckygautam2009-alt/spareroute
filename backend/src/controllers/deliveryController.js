@@ -2,6 +2,7 @@ const db = require('../config/db');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
+const { generateOtp, encryptOtp } = require('../utils/deliveryOtp');
 
 const listAvailable = asyncHandler(async (req, res) => {
   const result = await db.query(
@@ -78,6 +79,23 @@ const updateStatus = asyncHandler(async (req, res) => {
       await client.query(
         `UPDATE payments SET status = 'succeeded', collected_at = now(), updated_at = now() WHERE order_id = $1`,
         [orderId]
+      );
+    } else if (status === 'out_for_delivery') {
+      result = await client.query(
+        `UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 AND delivery_partner_id = $3 RETURNING *`,
+        [status, orderId, req.user.id]
+      );
+      const rawOtp = generateOtp();
+      const ciphertext = encryptOtp(rawOtp);
+      await client.query(
+        `INSERT INTO order_delivery_otps (order_id, otp_ciphertext, generated_at, failed_attempts, regenerated_count)
+         VALUES ($1, $2, now(), 0, 0)
+         ON CONFLICT (order_id) DO UPDATE
+         SET otp_ciphertext = EXCLUDED.otp_ciphertext,
+             generated_at = now(),
+             failed_attempts = 0,
+             locked_at = NULL`,
+        [orderId, ciphertext]
       );
     } else {
       result = await client.query(
