@@ -69,37 +69,35 @@ const updateStatus = asyncHandler(async (req, res) => {
       throw new AppError(`Cannot move order from '${current.status}' to 'delivered'`, 409);
     }
 
-    const otpResult = await db.query(
-      `SELECT order_id, otp_ciphertext, failed_attempts, locked_at FROM order_delivery_otps WHERE order_id = $1`,
+    // Consume ONE attempt atomically BEFORE comparing, so parallel requests can never
+    // test more than 5 codes in total (check-then-act would allow unlimited parallel guesses).
+    const attemptResult = await db.query(
+      `UPDATE order_delivery_otps
+       SET failed_attempts = failed_attempts + 1,
+           locked_at = CASE WHEN failed_attempts + 1 >= 5 THEN COALESCE(locked_at, now()) ELSE locked_at END
+       WHERE order_id = $1 AND locked_at IS NULL AND failed_attempts < 5 AND otp_ciphertext IS NOT NULL
+       RETURNING otp_ciphertext`,
       [orderId]
     );
-    const otpRow = otpResult.rows[0];
-    if (!otpRow) {
-      throw new AppError('Delivery code not found for this order', 409);
-    }
-    if (otpRow.locked_at !== null || otpRow.failed_attempts >= 5) {
-      throw new AppError('Delivery code locked. Contact support.', 423);
-    }
-
-    if (!otpRow.otp_ciphertext) {
+    if (attemptResult.rows.length === 0) {
+      const st = await db.query(
+        `SELECT otp_ciphertext, locked_at, failed_attempts FROM order_delivery_otps WHERE order_id = $1`,
+        [orderId]
+      );
+      const r = st.rows[0];
+      if (!r) throw new AppError('Delivery code not found for this order', 409);
+      if (r.locked_at !== null || r.failed_attempts >= 5) {
+        throw new AppError('Delivery code locked. Contact support.', 423);
+      }
       throw new AppError('Delivery code already used or expired', 409);
     }
 
-    const actualOtp = decryptOtp(otpRow.otp_ciphertext);
+    const actualOtp = decryptOtp(attemptResult.rows[0].otp_ciphertext);
     let isMatch = false;
     if (actualOtp && otp && actualOtp.length === otp.length) {
       isMatch = crypto.timingSafeEqual(Buffer.from(actualOtp, 'utf8'), Buffer.from(otp, 'utf8'));
     }
-
     if (!isMatch) {
-      // Must be committed separately even though request fails
-      await db.query(
-        `UPDATE order_delivery_otps
-         SET failed_attempts = LEAST(failed_attempts + 1, 5),
-             locked_at = CASE WHEN failed_attempts + 1 >= 5 THEN COALESCE(locked_at, now()) ELSE locked_at END
-         WHERE order_id = $1`,
-        [orderId]
-      );
       throw new AppError('Invalid delivery code', 400);
     }
 
@@ -109,13 +107,16 @@ const updateStatus = asyncHandler(async (req, res) => {
       const result = await client.query(
         `UPDATE orders
          SET status = 'delivered', delivered_at = now(), delivered_via = 'otp', updated_at = now()
-         WHERE id = $1 AND delivery_partner_id = $2
+         WHERE id = $1 AND delivery_partner_id = $2 AND status = 'out_for_delivery'
          RETURNING *`,
         [orderId, req.user.id]
       );
+      if (result.rowCount === 0) {
+        throw new AppError('Order is no longer out for delivery', 409);
+      }
       await client.query(
         `UPDATE order_delivery_otps
-         SET verified_at = now(), otp_ciphertext = NULL
+         SET verified_at = now(), otp_ciphertext = NULL, locked_at = NULL, failed_attempts = GREATEST(failed_attempts - 1, 0)
          WHERE order_id = $1`,
         [orderId]
       );
