@@ -14,4 +14,19 @@ const processRefund = z.object({
   note: z.string().max(500).optional(),
 });
 
-module.exports = { approveSeller, createRefund, processRefund };
+const idParam = z.object({
+  id: z.string().uuid(),
+});
+
+const sellerIdParam = z.object({
+  sellerId: z.string().uuid(),
+});
+
+const listRefunds = z.object({
+  status: z.enum(['pending', 'processed', 'failed']).optional(),
+  orderId: z.string().uuid().optional(),
+  page: z.string().regex(/^\d+$/).optional(),
+  limit: z.string().regex(/^\d+$/).optional(),
+});
+
+module.exports = { approveSeller, createRefund, processRefund, idParam, sellerIdParam, listRefunds };

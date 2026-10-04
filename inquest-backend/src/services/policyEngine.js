@@ -17,15 +17,17 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
       if (!focusOrder || focusOrder.customerId !== customer.id) {
         return { satisfied: false, reason: 'No verified order belonging to customer' };
       }
+      // COD-only: no online payment gateway. gatewayStatus is always null.
+      // Two successful payments would require an actual gateway. Without one, this cannot be satisfied.
       const successfulPayments = (focusPayments || []).filter(
-        (p) => (p.status === 'success' || p.gatewayStatus === 'success') && p.customerId === customer.id
+        (p) => p.status === 'success' && p.customerId === customer.id
       );
       if (successfulPayments.length >= 2) {
         return {
           satisfied: true,
           evidenceUsed: [
             `Verified order ${focusOrder.id} for customer ${customer.id}`,
-            ...successfulPayments.map((p) => `Payment ${p.id} gateway=${p.gatewayStatus || p.status}/local=${p.localStatus}`),
+            ...successfulPayments.map((p) => `Payment ${p.id} status=${p.status}`),
           ],
           details: {
             orderId: focusOrder.id,
@@ -34,11 +36,12 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
           },
         };
       }
-      return { satisfied: false, reason: 'Less than two successful payments recorded for this order' };
+      return { satisfied: false, reason: 'No online payment gateway is integrated — COD-only platform does not support duplicate payment detection' };
     }
 
     case 'POLICY1': {
-      // Failed payment with amount deducted
+      // Failed payment with amount deducted — requires gateway success + local failed
+      // COD-only: gatewayStatus is always null. This condition cannot be satisfied.
       const deductedFailed = (focusPayments || payments || []).filter(
         (p) => p.gatewayStatus === 'success' && p.localStatus === 'failed' && p.customerId === customer.id
       );
@@ -51,7 +54,7 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
           details: { payments: deductedFailed.map((p) => p.id) },
         };
       }
-      return { satisfied: false, reason: 'No payment found where gateway succeeded but local record failed' };
+      return { satisfied: false, reason: 'No online payment gateway is integrated — cannot have gateway success with local failure on COD platform' };
     }
 
     case 'POLICY2': {
@@ -66,7 +69,7 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
           satisfied: true,
           evidenceUsed: [
             `Refund ${matchingRefund.id} exists for order ${matchingRefund.orderId} with status=pending`,
-            `Initiated at ${matchingRefund.initiatedAt} (gateway ref: ${matchingRefund.gatewayRef || 'N/A'})`,
+            `Initiated at ${matchingRefund.initiatedAt}`,
           ],
           details: { refund: matchingRefund },
         };
@@ -92,26 +95,30 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
     }
 
     case 'POLICY3': {
-      // Return & Exchange window
+      // Return & Exchange window — must use policy.eligibleWithinDays and deliveredAt
       if (focusOrder && focusOrder.status === 'delivered' && !focusOrder.returnRequested) {
-        const deliveryDateStr = focusOrder.deliveredAt || focusOrder.deliveredOn;
-        if (deliveryDateStr) {
-          const deliveryTime = new Date(deliveryDateStr).getTime();
-          const now = Date.now();
-          const daysDiff = (now - deliveryTime) / (1000 * 60 * 60 * 24);
-          if (daysDiff <= (policy.eligibleWithinDays || 10) || isNaN(daysDiff)) {
-            return {
-              satisfied: true,
-              evidenceUsed: [
-                `Order ${focusOrder.id} delivered on ${deliveryDateStr}`,
-                `Delivery is within return window of ${policy.eligibleWithinDays || 10} days (${isNaN(daysDiff) ? 0 : Math.floor(daysDiff)} days elapsed)`,
-                'No return previously requested',
-              ],
-              details: { orderId: focusOrder.id, daysDiff: isNaN(daysDiff) ? 0 : Math.floor(daysDiff) },
-            };
-          }
-          return { satisfied: false, reason: `Delivery date (${deliveryDateStr}) exceeds ${policy.eligibleWithinDays || 10} day return window` };
+        const deliveryDateStr = focusOrder.deliveredAt;
+        if (!deliveryDateStr) {
+          return { satisfied: false, reason: 'Order delivery date is missing — cannot verify return window eligibility' };
         }
+        const deliveryTime = new Date(deliveryDateStr).getTime();
+        const now = Date.now();
+        const daysDiff = (now - deliveryTime) / (1000 * 60 * 60 * 24);
+        const policyWindow = policy.eligible_within_days || policy.eligibleWithinDays || 10;
+        const orderWindow = focusOrder.returnWindowDays;
+        const windowDays = (orderWindow != null && orderWindow < policyWindow) ? orderWindow : policyWindow;
+        if (!isNaN(daysDiff) && daysDiff <= windowDays) {
+          return {
+            satisfied: true,
+            evidenceUsed: [
+              `Order ${focusOrder.id} delivered on ${deliveryDateStr}`,
+              `Delivery is within return window of ${windowDays} days (${Math.floor(daysDiff)} days elapsed)`,
+              'No return previously requested',
+            ],
+            details: { orderId: focusOrder.id, daysDiff: Math.floor(daysDiff) },
+          };
+        }
+        return { satisfied: false, reason: `Delivery date (${deliveryDateStr}) exceeds ${windowDays} day return window` };
       }
       return { satisfied: false, reason: 'Order is not in delivered status or return already requested' };
     }
@@ -139,20 +146,21 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
     }
 
     case 'POLICY11': {
-      // Order in-transit status and delay
-      if (focusOrder && (focusOrder.status === 'in_transit' || focusOrder.courierTracking)) {
+      // Order in-transit status and delay — uses adapter's isInTransit and isDelayed
+      if (focusOrder && focusOrder.isInTransit) {
+        if (!focusOrder.isDelayed) {
+          return { satisfied: false, reason: 'Order is in transit but has not exceeded the expected delivery date — not delayed' };
+        }
         return {
           satisfied: true,
           evidenceUsed: [
             `Verified order ${focusOrder.id} status is "${focusOrder.status}"`,
-            focusOrder.courierTracking ? `Carrier tracking: ${focusOrder.courierTracking} (${focusOrder.courierStatus || 'in transit'})` : 'Carrier tracking active',
-            focusOrder.estimatedDelivery ? `Estimated delivery date: ${focusOrder.estimatedDelivery}` : 'Standard shipping window',
+            `Expected delivery by ${focusOrder.expectedDeliveryBy} — order is delayed`,
           ],
           details: {
             orderId: focusOrder.id,
             status: focusOrder.status,
-            tracking: focusOrder.courierTracking,
-            estimatedDelivery: focusOrder.estimatedDelivery,
+            expectedDeliveryBy: focusOrder.expectedDeliveryBy,
           },
         };
       }
@@ -168,7 +176,6 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
           evidenceUsed: [
             `Verified order ${focusOrder.id} exists for customer ${customer.id}`,
             `Current order status is "${focusOrder.status}"`,
-            focusOrder.courierTracking ? `Carrier tracking: ${focusOrder.courierTracking} (status: ${focusOrder.courierStatus || 'dispatched'})` : 'Standard dispatch verified',
             'Customer claim requires physical/carrier verification prior to resolution',
           ],
           details: { orderId: focusOrder.id, policyRequiresEscalation: true },
@@ -243,12 +250,6 @@ function matchPolicyForIntent(intentAnalysis, investigation) {
     }
     if (investigation.focusPayments && investigation.focusPayments.length >= 2) {
       return policies.find((p) => p.id === 'POLICY7') || null;
-    }
-    const hasDeductedFailed = (investigation.focusPayments || investigation.payments || []).some(
-      (p) => p.gatewayStatus === 'success' && p.localStatus === 'failed'
-    );
-    if (hasDeductedFailed) {
-      return policies.find((p) => p.id === 'POLICY1') || null;
     }
     return policies.find((p) => p.id === 'POLICY7') || null;
   }

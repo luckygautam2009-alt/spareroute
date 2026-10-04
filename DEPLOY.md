@@ -28,6 +28,7 @@ This guide covers deployment, environment configuration, database migrations, st
 | `RATE_LIMIT_WINDOW_MS` | No | `900000` | Rate limiter window in ms (15 min). |
 | `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Maximum requests per IP per window. |
 | `AUTH_RATE_LIMIT_MAX` | No | `5` | Maximum auth requests (login/register) per IP per window. |
+| `RETURN_WINDOW_DAYS` | No | `10` | Days after delivery during which buyers can request returns. Must match Inquest POLICY3 `eligible_within_days`. |
 
 ---
 

@@ -308,7 +308,7 @@ const requestReturn = asyncHandler(async (req, res) => {
       throw new AppError('Order delivery timestamp is missing', 409);
     }
 
-    const returnWindowDays = parseInt(process.env.RETURN_WINDOW_DAYS, 10) || 7;
+    const returnWindowDays = parseInt(process.env.RETURN_WINDOW_DAYS, 10) || 10;
     const windowMs = returnWindowDays * 24 * 60 * 60 * 1000;
     const deliveredAtTime = new Date(order.delivered_at).getTime();
     if (Date.now() - deliveredAtTime > windowMs) {

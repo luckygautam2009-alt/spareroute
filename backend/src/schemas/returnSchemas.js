@@ -5,4 +5,8 @@ const reviewReturn = z.object({
   note: z.string().max(500).optional(),
 });
 
-module.exports = { reviewReturn };
+const idParam = z.object({
+  id: z.string().uuid(),
+});
+
+module.exports = { reviewReturn, idParam };

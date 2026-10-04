@@ -29,4 +29,8 @@ const createReturn = z.object({
   reason: z.string().min(3).max(500),
 });
 
-module.exports = { create, updateStatus, rateMechanic, cancel, createReturn };
+const orderIdParam = z.object({
+  orderId: z.string().uuid(),
+});
+
+module.exports = { create, updateStatus, rateMechanic, cancel, createReturn, orderIdParam };
