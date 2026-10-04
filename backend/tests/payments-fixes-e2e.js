@@ -390,6 +390,55 @@ async function queryDb(sql, params = []) {
   const ordCheckAfterCleanup = await queryDb('SELECT id FROM orders WHERE id = $1', [ordDeleteId]);
   check('test order cleaned up', ordCheckAfterCleanup.length === 0);
 
+  // ============================================================
+  console.log('\n--- ITEM 6: LOCK ORDERING (NO DEADLOCKS) ---');
+  // ============================================================
+  // Test: 10 concurrent requestReturn/markReceived/reviewReturn calls never produce an HTTP 500.
+  const prod6 = await call('create product for deadlock test', 'POST', '/api/products', {
+    name: 'Wiper Motor ' + rnd(),
+    oemPartNumber: 'FIX-LOCK-' + rnd(),
+    brand: 'FixBrand',
+    category: 'electrical',
+    pricePaise: 80000,
+    stockQuantity: 10,
+  }, S.tok, 201);
+  const pId6 = find(prod6, 'id');
+
+  const ordLock = await call('place order for deadlock test', 'POST', '/api/orders', {
+    productId: pId6,
+    quantity: 1,
+    deliveryAddress: '800 Concurrency Court',
+  }, bTok, 201);
+  const ordLockId = find(ordLock, 'id');
+
+  await call('seller accepts ordLock', 'PATCH', `/api/orders/${ordLockId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('rider claims ordLock', 'PATCH', `/api/delivery/${ordLockId}/claim`, null, dTok, 200);
+  await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordLockId}/status`, { status: 'out_for_delivery' }, dTok, 200);
+  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordLockId}/status`, { status: 'delivered' }, dTok, 200);
+
+  // Create an initial return request
+  const retLock = await call('create return request for concurrency', 'POST', `/api/orders/${ordLockId}/return`, {
+    reason: 'Initial return request for lock test',
+  }, bTok, 201);
+  const retLockId = find(retLock, 'id');
+
+  // Fire 10 concurrent requests mixing requestReturn, reviewReturn, and markReceived (none must be 500)
+  const concurrentCalls = [
+    call('concurrent 1: review approved', 'PATCH', `/api/returns/${retLockId}/review`, { decision: 'approved' }, S.tok, [200, 400, 404, 409]),
+    call('concurrent 2: mark received', 'PATCH', `/api/returns/${retLockId}/received`, null, S.tok, [200, 400, 404, 409]),
+    call('concurrent 3: request return again', 'POST', `/api/orders/${ordLockId}/return`, { reason: 'Duplicate attempt 1' }, bTok, [201, 400, 409]),
+    call('concurrent 4: review rejected', 'PATCH', `/api/returns/${retLockId}/review`, { decision: 'rejected' }, S.tok, [200, 400, 404, 409]),
+    call('concurrent 5: mark received again', 'PATCH', `/api/returns/${retLockId}/received`, null, S.tok, [200, 400, 404, 409]),
+    call('concurrent 6: request return again', 'POST', `/api/orders/${ordLockId}/return`, { reason: 'Duplicate attempt 2' }, bTok, [201, 400, 409]),
+    call('concurrent 7: review approved', 'PATCH', `/api/returns/${retLockId}/review`, { decision: 'approved' }, S.tok, [200, 400, 404, 409]),
+    call('concurrent 8: mark received', 'PATCH', `/api/returns/${retLockId}/received`, null, S.tok, [200, 400, 404, 409]),
+    call('concurrent 9: request return again', 'POST', `/api/orders/${ordLockId}/return`, { reason: 'Duplicate attempt 3' }, bTok, [201, 400, 409]),
+    call('concurrent 10: review approved', 'PATCH', `/api/returns/${retLockId}/review`, { decision: 'approved' }, S.tok, [200, 400, 404, 409]),
+  ];
+
+  const concurrentResults = await Promise.all(concurrentCalls);
+  check('10 concurrent calls completed without deadlock HTTP 500', concurrentResults.length === 10);
+
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();

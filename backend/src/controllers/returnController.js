@@ -13,15 +13,34 @@ const reviewReturn = asyncHandler(async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+
+    // Find the order_id for this return request first
+    const retLookup = await client.query(
+      `SELECT order_id FROM return_requests WHERE id = $1`,
+      [returnId]
+    );
+    if (retLookup.rows.length === 0) {
+      throw new AppError('Return request not found', 404);
+    }
+    const orderId = retLookup.rows[0].order_id;
+
+    // Lock ORDER row FIRST
+    const orderResult = await client.query(
+      `SELECT id, seller_id, status FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const order = orderResult.rows[0];
+    if (!order || order.seller_id !== seller.id) {
+      throw new AppError('Return request not found', 404);
+    }
+
+    // Lock RETURN row SECOND
     const returnResult = await client.query(
-      `SELECT r.id, r.order_id, r.buyer_id, r.status, o.seller_id
-       FROM return_requests r
-       JOIN orders o ON o.id = r.order_id
-       WHERE r.id = $1 FOR UPDATE OF r`,
+      `SELECT id, order_id, buyer_id, status FROM return_requests WHERE id = $1 FOR UPDATE`,
       [returnId]
     );
     const ret = returnResult.rows[0];
-    if (!ret || ret.seller_id !== seller.id) {
+    if (!ret) {
       throw new AppError('Return request not found', 404);
     }
     if (ret.status !== 'requested') {
@@ -38,7 +57,7 @@ const reviewReturn = asyncHandler(async (req, res) => {
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata)
        VALUES ($1, $2, 'return_request', $3, $4)`,
-      [req.user.id, `return_${decision}`, returnId, JSON.stringify({ decision, note: note || null, orderId: ret.order_id })]
+      [req.user.id, `return_${decision}`, returnId, JSON.stringify({ decision, note: note || null, orderId })]
     );
 
     await client.query('COMMIT');
@@ -61,25 +80,39 @@ const markReceived = asyncHandler(async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
+
+    // Find the order_id for this return request first
+    const retLookup = await client.query(
+      `SELECT order_id FROM return_requests WHERE id = $1`,
+      [returnId]
+    );
+    if (retLookup.rows.length === 0) {
+      throw new AppError('Return request not found', 404);
+    }
+    const orderId = retLookup.rows[0].order_id;
+
+    // Lock ORDER row FIRST
+    const orderResult = await client.query(
+      `SELECT id, seller_id, status FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const order = orderResult.rows[0];
+    if (!order || order.seller_id !== seller.id) {
+      throw new AppError('Return request not found', 404);
+    }
+
+    // Lock RETURN row SECOND
     const returnResult = await client.query(
-      `SELECT r.id, r.order_id, r.buyer_id, r.status, o.seller_id, o.status AS order_status
-       FROM return_requests r
-       JOIN orders o ON o.id = r.order_id
-       WHERE r.id = $1 FOR UPDATE OF r`,
+      `SELECT id, order_id, buyer_id, status FROM return_requests WHERE id = $1 FOR UPDATE`,
       [returnId]
     );
     const ret = returnResult.rows[0];
-    if (!ret || ret.seller_id !== seller.id) {
+    if (!ret) {
       throw new AppError('Return request not found', 404);
     }
     if (ret.status !== 'approved') {
       throw new AppError(`Cannot mark return as received from '${ret.status}' status`, 409);
     }
-
-    await client.query(
-      `SELECT id, status FROM orders WHERE id = $1 FOR UPDATE`,
-      [ret.order_id]
-    );
 
     const updated = await client.query(
       `UPDATE return_requests
@@ -90,19 +123,19 @@ const markReceived = asyncHandler(async (req, res) => {
 
     await client.query(
       `UPDATE orders SET status = 'returned', updated_at = now() WHERE id = $1`,
-      [ret.order_id]
+      [orderId]
     );
 
     await client.query(
       `INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, changed_at)
        VALUES ($1, $2, 'returned', $3, now())`,
-      [ret.order_id, ret.order_status, req.user.id]
+      [orderId, order.status, req.user.id]
     );
 
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata)
        VALUES ($1, 'return_received', 'return_request', $2, $3)`,
-      [req.user.id, returnId, JSON.stringify({ orderId: ret.order_id })]
+      [req.user.id, returnId, JSON.stringify({ orderId })]
     );
 
     await client.query('COMMIT');
