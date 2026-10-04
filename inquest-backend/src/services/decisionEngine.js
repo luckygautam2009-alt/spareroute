@@ -87,15 +87,23 @@ function decide(complaintText, analysis, rootCause, investigation) {
 
   // CUSTOMER_CONFIRM when order is required but not exactly identified
   if (orderRequired && (!orderVerified || investigation.orderInferred)) {
-    // Build list of this customer's recent orders for the questionsForCustomer
-    const recentOrders = (investigation.orders || []).slice(0, 10).map((o) => ({
-      orderNumber: o.orderNumber || null,
-      product: o.product,
-      status: o.status,
-    }));
+    // Zero orders on record → escalate, there's nothing to ask about
+    if (!investigation.orders || investigation.orders.length === 0) {
+      return {
+        decision: 'HUMAN_ESCALATION',
+        reasoning: 'No orders on record for this customer. Cannot process an order-related intent without any order history.',
+        confidence,
+        sentimentNote: `Note: Decision based on empty order history, not sentiment (${analysis.sentiment}).`,
+      };
+    }
 
     if (!orderVerified) {
-      // No order found at all (0 orders, or 2+ with no hint)
+      // Has orders but could not identify which one (2+ with no hint)
+      const recentOrders = investigation.orders.slice(0, 10).map((o) => ({
+        orderNumber: o.orderNumber || null,
+        product: o.product,
+        status: o.status,
+      }));
       return {
         decision: 'CUSTOMER_CONFIRM',
         reasoning: 'Order is required for this intent but could not be identified. Asking the customer to specify their order number.',

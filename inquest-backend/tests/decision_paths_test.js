@@ -117,11 +117,20 @@ console.log('\n[Safety Guard 4] No matched policy');
 
 // ── CUSTOMER_CONFIRM: order required but not identified ───────────────────────
 
-console.log('\n[CUSTOMER_CONFIRM] Refund intent, no order at all (0 orders)');
+console.log('\n[HUMAN_ESCALATION] Refund intent, zero orders on record');
 {
   const inv = baseInvestigation({ orders: [], orderVerified: false, orderInferred: false, policies: [makePolicy('POLICY3')] });
   const result = decide('I want a refund', baseAnalysis('refund/return'), baseRootCause('POLICY3', 90), inv);
-  assert('decision is CUSTOMER_CONFIRM', result.decision, 'CUSTOMER_CONFIRM');
+  assert('decision is HUMAN_ESCALATION (zero orders)', result.decision, 'HUMAN_ESCALATION');
+}
+
+console.log('\n[CUSTOMER_CONFIRM] Refund intent, multiple orders but none identified');
+{
+  const order1 = { id: 'o1', customerId: CUSTOMER_ID, status: 'delivered', orderNumber: 'SR-00000001', product: 'A', amount: 100 };
+  const order2 = { id: 'o2', customerId: CUSTOMER_ID, status: 'placed', orderNumber: 'SR-00000002', product: 'B', amount: 200 };
+  const inv = baseInvestigation({ orders: [order1, order2], orderVerified: false, orderInferred: false, policies: [makePolicy('POLICY3')] });
+  const result = decide('I want a refund', baseAnalysis('refund/return'), baseRootCause('POLICY3', 90), inv);
+  assert('decision is CUSTOMER_CONFIRM (multi-order, none identified)', result.decision, 'CUSTOMER_CONFIRM');
   assert('needsInfo is true', result.needsInfo, true);
 }
 
