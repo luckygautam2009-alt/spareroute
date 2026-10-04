@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Static Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check syntax on all backend and inquest-backend JS files
+        run: |
+          find backend/src inquest-backend/src -name "*.js" -not -path "*/node_modules/*" -print0 | xargs -0 -n 1 node --check
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Audit SpareRoute backend dependencies
+        run: npm --prefix backend audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+      - name: Audit Inquest backend dependencies
+        run: npm --prefix inquest-backend audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+
+  test:
+    name: Integration & E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            inquest-backend/package-lock.json
+
+      - name: Create throwaway CI databases
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE spareroute_ci;" -c "CREATE DATABASE inquest_ci;"
+
+      - name: Generate throwaway secrets and configure environment
+        run: |
+          JWT_ACC=$(openssl rand -hex 32)
+          JWT_REF=$(openssl rand -hex 32)
+          INT_KEY=$(openssl rand -hex 32)
+          ADM_PW="Admin@$(openssl rand -hex 12)"
+
+          echo "::add-mask::$JWT_ACC"
+          echo "::add-mask::$JWT_REF"
+          echo "::add-mask::$INT_KEY"
+          echo "::add-mask::$ADM_PW"
+
+          echo "NODE_ENV=development" >> $GITHUB_ENV
+          echo "PORT=4000" >> $GITHUB_ENV
+          echo "IQ_PORT=5001" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci" >> $GITHUB_ENV
+          echo "INQUEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci" >> $GITHUB_ENV
+          echo "JWT_ACCESS_SECRET=$JWT_ACC" >> $GITHUB_ENV
+          echo "JWT_REFRESH_SECRET=$JWT_REF" >> $GITHUB_ENV
+          echo "INTERNAL_API_KEY=$INT_KEY" >> $GITHUB_ENV
+          echo "SPAREROUTE_INTERNAL_API_KEY=$INT_KEY" >> $GITHUB_ENV
+          echo "SPAREROUTE_API_URL=http://localhost:4000" >> $GITHUB_ENV
+          echo "RATE_LIMIT_MAX_REQUESTS=10000" >> $GITHUB_ENV
+          echo "AUTH_RATE_LIMIT_MAX=1000" >> $GITHUB_ENV
+          echo "E2E_ADMIN_PHONE=9000000001" >> $GITHUB_ENV
+          echo "E2E_ADMIN_PASSWORD=$ADM_PW" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          npm --prefix backend ci
+          npm --prefix inquest-backend ci
+
+      - name: Run database migrations
+        run: |
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/src/db/migrate.js
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci node inquest-backend/src/db/migrate.js
+
+      - name: Seed CI admin account
+        run: |
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/src/db/createAdmin.js "CI Admin" "$E2E_ADMIN_PHONE" "$E2E_ADMIN_PASSWORD"
+
+      - name: Start background services and wait for readiness
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          PORT=4000 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci \
+            JWT_ACCESS_SECRET="$JWT_ACCESS_SECRET" JWT_REFRESH_SECRET="$JWT_REFRESH_SECRET" \
+            INTERNAL_API_KEY="$INTERNAL_API_KEY" NODE_ENV=development \
+            RATE_LIMIT_MAX_REQUESTS=10000 AUTH_RATE_LIMIT_MAX=1000 \
+            node backend/src/server.js > backend.log 2>&1 &
+
+          PORT=5001 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci \
+            JWT_ACCESS_SECRET="$JWT_ACCESS_SECRET" \
+            SPAREROUTE_INTERNAL_API_KEY="$SPAREROUTE_INTERNAL_API_KEY" \
+            SPAREROUTE_API_URL=http://localhost:4000 \
+            GEMINI_API_KEY="$GEMINI_API_KEY" \
+            NODE_ENV=development \
+            node inquest-backend/src/app.js > inquest-backend.log 2>&1 &
+
+          echo "Waiting for SpareRoute backend on http://localhost:4000/ready..."
+          timeout=60
+          while [ $timeout -gt 0 ]; do
+            if curl -s -f http://localhost:4000/ready > /dev/null 2>&1; then
+              echo "SpareRoute backend is ready!"
+              break
+            fi
+            sleep 1
+            timeout=$((timeout - 1))
+          done
+          if [ $timeout -eq 0 ]; then
+            echo "ERROR: SpareRoute backend failed to become ready within 60s"
+            echo "=== Last 50 lines of backend.log ==="
+            tail -n 50 backend.log || true
+            exit 1
+          fi
+
+          echo "Waiting for Inquest backend on http://localhost:5001/ready..."
+          timeout=60
+          while [ $timeout -gt 0 ]; do
+            if curl -s -f http://localhost:5001/ready > /dev/null 2>&1; then
+              echo "Inquest backend is ready!"
+              break
+            fi
+            sleep 1
+            timeout=$((timeout - 1))
+          done
+          if [ $timeout -eq 0 ]; then
+            echo "ERROR: Inquest backend failed to become ready within 60s"
+            echo "=== Last 50 lines of inquest-backend.log ==="
+            tail -n 50 inquest-backend.log || true
+            exit 1
+          fi
+
+      - name: "Run test suite: mech-e2e.js"
+        run: node mech-e2e.js
+
+      - name: "Run test suite: backend/tests/payments-e2e.js"
+        if: always()
+        run: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/tests/payments-e2e.js
+
+      - name: "Run test suite: backend/tests/payments-fixes-e2e.js"
+        if: always()
+        run: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/spareroute_ci node backend/tests/payments-fixes-e2e.js
+
+      - name: "Run test suite: inquest-e2e.js"
+        if: always()
+        run: node inquest-e2e.js
+
+      - name: "Run test suite: inquest-backend/tests/admin_profile_test.js"
+        if: always()
+        run: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/inquest_ci node inquest-backend/tests/admin_profile_test.js
+
+      - name: "Run test suite: inquest-backend/tests/hardening_e2e.js"
+        if: always()
+        run: node inquest-backend/tests/hardening_e2e.js
+
+      - name: "Run test suite: e2e.js (Gemini AI Complaint Flow)"
+        if: always()
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "Running e2e.js with GEMINI_API_KEY configured..."
+            node e2e.js
+          else
+            echo "SKIPPED: e2e.js skipped (no secret: GEMINI_API_KEY is not configured in this environment)"
+          fi
+
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            backend.log
+            inquest-backend.log
+          retention-days: 3
