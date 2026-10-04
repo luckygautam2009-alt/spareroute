@@ -45,7 +45,12 @@ async function submitComplaint(req, res) {
     await dataStore.saveTicket({
       id: ticketId, customerId, orderId: investigation.focusOrder?.id || null,
       category: analysis.intent || 'general', subject: complaintText.slice(0, 200),
-      status: decision.decision === 'AUTO_RESOLVE' ? 'resolved' : decision.decision === 'HUMAN_ESCALATION' ? 'escalated' : 'awaiting_customer',
+      status: (() => {
+        if (decision.decision === 'AUTO_RESOLVE') return 'resolved';
+        if (decision.decision === 'HUMAN_ESCALATION') return 'escalated';
+        if (decision.decision === 'CUSTOMER_CONFIRM') return 'awaiting_customer';
+        return 'open'; // unknown or missing decision value
+      })(),
       resolution: decision.reasoning || null, analysis, investigation, rootCause, decision,
     });
 

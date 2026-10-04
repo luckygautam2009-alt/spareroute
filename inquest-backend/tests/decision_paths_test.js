@@ -355,6 +355,31 @@ console.log('\n[extractOrderIdHint] Word-boundary true-positive hits');
   assert('"order number SR-00000005" extracts SR-00000005', extractOrderIdHint('My order number SR-00000005 is wrong'), 'SR-00000005');
 }
 
+// ── Ticket status mapping (complaint.controller.js) ─────────────────────────
+// Replicate the IIFE from the controller so we can test it in isolation.
+
+function ticketStatus(decisionValue) {
+  if (decisionValue === 'AUTO_RESOLVE') return 'resolved';
+  if (decisionValue === 'HUMAN_ESCALATION') return 'escalated';
+  if (decisionValue === 'CUSTOMER_CONFIRM') return 'awaiting_customer';
+  return 'open';
+}
+
+console.log('\n[ticket status] Known decision values');
+{
+  assert('AUTO_RESOLVE -> resolved', ticketStatus('AUTO_RESOLVE'), 'resolved');
+  assert('HUMAN_ESCALATION -> escalated', ticketStatus('HUMAN_ESCALATION'), 'escalated');
+  assert('CUSTOMER_CONFIRM -> awaiting_customer', ticketStatus('CUSTOMER_CONFIRM'), 'awaiting_customer');
+}
+
+console.log('\n[ticket status] Unknown / missing decision values -> open');
+{
+  assert('undefined -> open', ticketStatus(undefined), 'open');
+  assert('null -> open', ticketStatus(null), 'open');
+  assert('empty string -> open', ticketStatus(''), 'open');
+  assert('unknown value -> open', ticketStatus('SOME_FUTURE_STATE'), 'open');
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 
 console.log(`\n${'='.repeat(50)}`);
