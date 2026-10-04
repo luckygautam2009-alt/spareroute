@@ -104,7 +104,9 @@ function evaluatePolicyConditions(policy, investigation, analysis) {
         const deliveryTime = new Date(deliveryDateStr).getTime();
         const now = Date.now();
         const daysDiff = (now - deliveryTime) / (1000 * 60 * 60 * 24);
-        const windowDays = policy.eligible_within_days || policy.eligibleWithinDays || 10;
+        const policyWindow = policy.eligible_within_days || policy.eligibleWithinDays || 10;
+        const orderWindow = focusOrder.returnWindowDays;
+        const windowDays = (orderWindow != null && orderWindow < policyWindow) ? orderWindow : policyWindow;
         if (!isNaN(daysDiff) && daysDiff <= windowDays) {
           return {
             satisfied: true,

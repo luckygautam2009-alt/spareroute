@@ -199,19 +199,19 @@ console.log('\n[policyEngine] POLICY3 — within return window');
   assert('POLICY3 satisfied within window', result.satisfied, true);
 }
 
-console.log('\n[policyEngine] POLICY3 — outside return window');
+console.log('\n[policyEngine] POLICY3 — outside return window (11 days > 10 day window)');
 {
-  const deliveredAt = new Date(Date.now() - 15 * 86400000).toISOString();
+  const deliveredAt = new Date(Date.now() - 11 * 86400000).toISOString();
   const focusOrder = {
     id: ORDER_ID, customerId: CUSTOMER_ID, status: 'delivered',
     deliveredAt, returnRequested: false, isInTransit: false, isDelayed: false,
     returnStatus: null, expectedDeliveryBy: null, statusHistory: [],
-    orderNumber: 'SR-00000001', product: 'Book', amount: 250,
+    orderNumber: 'SR-00000001', product: 'Book', amount: 250, returnWindowDays: 10,
   };
   const policy = makePolicy('POLICY3', { eligible_within_days: 10 });
   const inv = baseInvestigation({ focusOrder, customer: { id: CUSTOMER_ID } });
   const result = evaluatePolicyConditions(policy, inv, baseAnalysis());
-  assert('POLICY3 not satisfied outside window', result.satisfied, false);
+  assert('POLICY3 not satisfied outside window (11d)', result.satisfied, false);
 }
 
 console.log('\n[policyEngine] POLICY3 — missing deliveredAt');
@@ -225,6 +225,37 @@ console.log('\n[policyEngine] POLICY3 — missing deliveredAt');
   const inv = baseInvestigation({ focusOrder, customer: { id: CUSTOMER_ID } });
   const result = evaluatePolicyConditions(policy, inv, baseAnalysis());
   assert('POLICY3 not satisfied with missing deliveredAt', result.satisfied, false);
+}
+
+console.log('\n[policyEngine] POLICY3 — 9 days -> eligible under 10-day window');
+{
+  const deliveredAt = new Date(Date.now() - 9 * 86400000).toISOString();
+  const focusOrder = {
+    id: ORDER_ID, customerId: CUSTOMER_ID, status: 'delivered',
+    deliveredAt, returnRequested: false, isInTransit: false, isDelayed: false,
+    returnStatus: null, expectedDeliveryBy: null, statusHistory: [],
+    orderNumber: 'SR-00000001', product: 'Book', amount: 250, returnWindowDays: 10,
+  };
+  const policy = makePolicy('POLICY3', { eligible_within_days: 10 });
+  const inv = baseInvestigation({ focusOrder, customer: { id: CUSTOMER_ID } });
+  const result = evaluatePolicyConditions(policy, inv, baseAnalysis());
+  assert('POLICY3 satisfied at 9 days', result.satisfied, true);
+}
+
+console.log('\n[policyEngine] POLICY3 — returnWindowDays overrides policy when stricter');
+{
+  const deliveredAt = new Date(Date.now() - 6 * 86400000).toISOString();
+  const focusOrder = {
+    id: ORDER_ID, customerId: CUSTOMER_ID, status: 'delivered',
+    deliveredAt, returnRequested: false, isInTransit: false, isDelayed: false,
+    returnStatus: null, expectedDeliveryBy: null, statusHistory: [],
+    orderNumber: 'SR-00000001', product: 'Book', amount: 250, returnWindowDays: 5,
+  };
+  // Policy says 10, but SpareRoute says 5 -> min(5,10)=5, 6 > 5 -> not satisfied
+  const policy = makePolicy('POLICY3', { eligible_within_days: 10 });
+  const inv = baseInvestigation({ focusOrder, customer: { id: CUSTOMER_ID } });
+  const result = evaluatePolicyConditions(policy, inv, baseAnalysis());
+  assert('POLICY3 not satisfied when returnWindowDays (5) is stricter', result.satisfied, false);
 }
 
 console.log('\n[policyEngine] POLICY11 — in-transit and delayed');

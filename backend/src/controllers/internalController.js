@@ -21,6 +21,7 @@ const getCustomerContext = asyncHandler(async (req, res) => {
   }
 
   const deliverySlaHours = parseInt(process.env.DELIVERY_SLA_HOURS, 10) || 48;
+  const returnWindowDays = parseInt(process.env.RETURN_WINDOW_DAYS, 10) || 10;
 
   const ordersResult = await db.query(
     `SELECT o.id, o.order_number, o.status, o.total_amount_paise AS amount, o.service_fee_paise,
@@ -100,6 +101,7 @@ const getCustomerContext = asyncHandler(async (req, res) => {
       expectedDeliveryBy,
       statusHistory: historyForOrder,
       cancelReason: o.cancel_reason || null,
+      returnWindowDays,
     };
   });
 

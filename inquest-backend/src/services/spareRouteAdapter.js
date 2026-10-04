@@ -49,6 +49,7 @@ function adaptOrders(orders) {
     isDelayed: o.expectedDeliveryBy
       ? (IN_TRANSIT_STATUSES.includes(o.status) && now > new Date(o.expectedDeliveryBy).getTime())
       : false,
+    returnWindowDays: o.returnWindowDays != null ? o.returnWindowDays : null,
   }));
 }
 
