@@ -52,7 +52,7 @@ const createRefund = asyncHandler(async (req, res) => {
   if (existingResult.rows.length > 0) {
     const existing = existingResult.rows[0];
     const matchOrder = existing.order_id === orderId;
-    const matchAmount = String(existing.amount_paise) === String(amountPaise);
+    const matchAmount = BigInt(existing.amount_paise) === BigInt(amountPaise);
     const matchReason = existing.reason === reason;
     const matchReturn = (existing.return_request_id || null) === (returnRequestId || null);
     if (matchOrder && matchAmount && matchReason && matchReturn) {
@@ -126,7 +126,7 @@ const createRefund = asyncHandler(async (req, res) => {
       if (replayResult.rows.length > 0) {
         const existing = replayResult.rows[0];
         const matchOrder = existing.order_id === orderId;
-        const matchAmount = String(existing.amount_paise) === String(amountPaise);
+        const matchAmount = BigInt(existing.amount_paise) === BigInt(amountPaise);
         const matchReason = existing.reason === reason;
         const matchReturn = (existing.return_request_id || null) === (returnRequestId || null);
         if (matchOrder && matchAmount && matchReason && matchReturn) {

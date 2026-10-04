@@ -26,7 +26,7 @@ const create = asyncHandler(async (req, res) => {
       throw new AppError(`Only ${product.stock_quantity} unit(s) left in stock`, 409);
     }
 
-    let serviceFeePaise = 0;
+    let serviceFeePaise = 0n;
     if (mechanicId) {
       const mechanicResult = await client.query(
         `SELECT id, seller_id, service_fee_paise FROM mechanics
@@ -38,7 +38,7 @@ const create = asyncHandler(async (req, res) => {
       if (mechanic.seller_id !== product.seller_id) {
         throw new AppError('This mechanic does not belong to the seller of this product', 400);
       }
-      serviceFeePaise = mechanic.service_fee_paise;
+      serviceFeePaise = BigInt(mechanic.service_fee_paise);
     }
 
     await client.query(
@@ -46,15 +46,15 @@ const create = asyncHandler(async (req, res) => {
       [quantity, productId]
     );
 
-    const totalAmountPaise = product.price_paise * quantity;
+    const totalAmountPaise = BigInt(product.price_paise) * BigInt(quantity);
 
     const orderResult = await client.query(
       `INSERT INTO orders
          (buyer_id, seller_id, total_amount_paise, delivery_address, delivery_latitude, delivery_longitude,
           mechanic_id, service_fee_paise)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [req.user.id, product.seller_id, totalAmountPaise, deliveryAddress,
-       deliveryLatitude || null, deliveryLongitude || null, mechanicId || null, serviceFeePaise]
+      [req.user.id, product.seller_id, totalAmountPaise.toString(), deliveryAddress,
+       deliveryLatitude || null, deliveryLongitude || null, mechanicId || null, serviceFeePaise.toString()]
     );
     const order = orderResult.rows[0];
 
@@ -68,7 +68,7 @@ const create = asyncHandler(async (req, res) => {
     await client.query(
       `INSERT INTO payments (order_id, buyer_id, amount_paise, method, status)
        VALUES ($1, $2, $3, 'cod', 'pending')`,
-      [order.id, req.user.id, paymentAmountPaise]
+      [order.id, req.user.id, paymentAmountPaise.toString()]
     );
 
     await client.query(
