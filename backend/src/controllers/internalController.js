@@ -26,13 +26,17 @@ const getCustomerContext = asyncHandler(async (req, res) => {
   const ordersResult = await db.query(
     `SELECT o.id, o.order_number, o.status, o.total_amount_paise AS amount, o.service_fee_paise,
             o.delivery_address, o.mechanic_id, o.mechanic_rating,
-            o.delivered_at, o.cancelled_by, o.cancel_reason,
+            o.delivered_at, o.delivered_via, o.cancelled_by, o.cancel_reason,
             o.created_at AS "placedAt", o.updated_at AS "updatedAt",
-            oi.product_id, p.name AS "productName", s.business_name AS "sellerName"
+            oi.product_id, p.name AS "productName", s.business_name AS "sellerName",
+            odo.verified_at AS "deliveryOtpVerifiedAt",
+            odo.failed_attempts AS "deliveryOtpFailedAttempts",
+            odo.locked_at AS "deliveryOtpLockedAt"
      FROM orders o
      LEFT JOIN order_items oi ON oi.order_id = o.id
      LEFT JOIN products p ON p.id = oi.product_id
      LEFT JOIN sellers s ON s.id = o.seller_id
+     LEFT JOIN order_delivery_otps odo ON odo.order_id = o.id
      WHERE o.buyer_id = $1
      ORDER BY o.created_at DESC`,
     [userId]
@@ -102,6 +106,10 @@ const getCustomerContext = asyncHandler(async (req, res) => {
       statusHistory: historyForOrder,
       cancelReason: o.cancel_reason || null,
       returnWindowDays,
+      deliveredVia: o.delivered_via || null,
+      deliveryOtpVerifiedAt: o.deliveryOtpVerifiedAt ? new Date(o.deliveryOtpVerifiedAt).toISOString() : null,
+      deliveryOtpFailedAttempts: o.deliveryOtpFailedAttempts != null ? Number(o.deliveryOtpFailedAttempts) : 0,
+      deliveryOtpLocked: Boolean(o.deliveryOtpLockedAt),
     };
   });
 
