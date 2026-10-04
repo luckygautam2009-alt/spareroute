@@ -349,6 +349,47 @@ async function queryDb(sql, params = []) {
     reason: 'Third refund should fail',
   }, aTok, [400, 409], { 'Idempotency-Key': key3 });
 
+  // ============================================================
+  console.log('\n--- ITEM 5: MIGRATION 004 ON DELETE RESTRICT ---');
+  // ============================================================
+  // Test: deleting an order that has a payment via SQL is rejected (clean up only the rows the test created).
+  const prod5 = await call('create product for delete restrict test', 'POST', '/api/products', {
+    name: 'Spark Plug ' + rnd(),
+    oemPartNumber: 'FIX-SP-' + rnd(),
+    brand: 'FixBrand',
+    category: 'ignition',
+    pricePaise: 50000,
+    stockQuantity: 10,
+  }, S.tok, 201);
+  const pId5 = find(prod5, 'id');
+
+  const ordDelete = await call('place order for delete test', 'POST', '/api/orders', {
+    productId: pId5,
+    quantity: 1,
+    deliveryAddress: '700 Delete Restrict Ave',
+  }, bTok, 201);
+  const ordDeleteId = find(ordDelete, 'id');
+
+  let deleteRejected = false;
+  let deleteError = null;
+  try {
+    await queryDb('DELETE FROM orders WHERE id = $1', [ordDeleteId]);
+  } catch (err) {
+    deleteRejected = true;
+    deleteError = err.message;
+  }
+  check('deleting order with payment via SQL is rejected (ON DELETE RESTRICT)', deleteRejected, { deleteError });
+
+  // Clean up only the rows the test created
+  await queryDb('DELETE FROM payments WHERE order_id = $1', [ordDeleteId]);
+  await queryDb('DELETE FROM order_status_history WHERE order_id = $1', [ordDeleteId]);
+  await queryDb('DELETE FROM order_items WHERE order_id = $1', [ordDeleteId]);
+  await queryDb('DELETE FROM orders WHERE id = $1', [ordDeleteId]);
+  await queryDb('DELETE FROM products WHERE id = $1', [pId5]);
+
+  const ordCheckAfterCleanup = await queryDb('SELECT id FROM orders WHERE id = $1', [ordDeleteId]);
+  check('test order cleaned up', ordCheckAfterCleanup.length === 0);
+
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();
