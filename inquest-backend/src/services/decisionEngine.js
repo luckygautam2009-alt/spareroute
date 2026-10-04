@@ -99,6 +99,14 @@ function decide(complaintText, analysis, rootCause, investigation) {
 
     if (!orderVerified) {
       // Has orders but could not identify which one (2+ with no hint)
+      if (confidence < 60) {
+        return {
+          decision: 'HUMAN_ESCALATION',
+          reasoning: `Order is required but could not be identified, and confidence (${confidence}%) is below the threshold for customer interaction. Escalating for human review.`,
+          confidence,
+          sentimentNote: `Note: Decision based on low confidence and missing order identification, not sentiment (${analysis.sentiment}).`,
+        };
+      }
       const recentOrders = investigation.orders.slice(0, 10).map((o) => ({
         orderNumber: o.orderNumber || null,
         product: o.product,

@@ -124,13 +124,22 @@ console.log('\n[HUMAN_ESCALATION] Refund intent, zero orders on record');
   assert('decision is HUMAN_ESCALATION (zero orders)', result.decision, 'HUMAN_ESCALATION');
 }
 
-console.log('\n[CUSTOMER_CONFIRM] Refund intent, multiple orders but none identified');
+console.log('\n[HUMAN_ESCALATION] Order required + not identified + confidence 40');
 {
   const order1 = { id: 'o1', customerId: CUSTOMER_ID, status: 'delivered', orderNumber: 'SR-00000001', product: 'A', amount: 100 };
   const order2 = { id: 'o2', customerId: CUSTOMER_ID, status: 'placed', orderNumber: 'SR-00000002', product: 'B', amount: 200 };
   const inv = baseInvestigation({ orders: [order1, order2], orderVerified: false, orderInferred: false, policies: [makePolicy('POLICY3')] });
-  const result = decide('I want a refund', baseAnalysis('refund/return'), baseRootCause('POLICY3', 90), inv);
-  assert('decision is CUSTOMER_CONFIRM (multi-order, none identified)', result.decision, 'CUSTOMER_CONFIRM');
+  const result = decide('I want a refund', baseAnalysis('refund/return'), baseRootCause('POLICY3', 40), inv);
+  assert('decision is HUMAN_ESCALATION (confidence 40, order unidentified)', result.decision, 'HUMAN_ESCALATION');
+}
+
+console.log('\n[CUSTOMER_CONFIRM] Order required + not identified + confidence 70');
+{
+  const order1 = { id: 'o1', customerId: CUSTOMER_ID, status: 'delivered', orderNumber: 'SR-00000001', product: 'A', amount: 100 };
+  const order2 = { id: 'o2', customerId: CUSTOMER_ID, status: 'placed', orderNumber: 'SR-00000002', product: 'B', amount: 200 };
+  const inv = baseInvestigation({ orders: [order1, order2], orderVerified: false, orderInferred: false, policies: [makePolicy('POLICY3')] });
+  const result = decide('I want a refund', baseAnalysis('refund/return'), baseRootCause('POLICY3', 70), inv);
+  assert('decision is CUSTOMER_CONFIRM (confidence 70, order unidentified)', result.decision, 'CUSTOMER_CONFIRM');
   assert('needsInfo is true', result.needsInfo, true);
 }
 
