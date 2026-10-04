@@ -4,7 +4,7 @@ const approveSeller = z.object({ approve: z.boolean() });
 
 const createRefund = z.object({
   orderId: z.string().uuid(),
-  amountPaise: z.number().int().positive(),
+  amountPaise: z.number().int().positive().max(1000000000),
   reason: z.string().min(3).max(500),
   returnRequestId: z.string().uuid().optional().nullable(),
 });

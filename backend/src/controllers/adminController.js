@@ -72,8 +72,8 @@ const createRefund = asyncHandler(async (req, res) => {
     const payment = paymentResult.rows[0];
     if (!payment) throw new AppError('Order or payment not found', 404);
 
-    if (payment.status !== 'succeeded') {
-      throw new AppError('Payment must be succeeded before creating a refund', 409);
+    if (!['succeeded', 'partially_refunded'].includes(payment.status)) {
+      throw new AppError('Payment must be succeeded or partially refunded before creating a refund', 409);
     }
 
     const refundedResult = await client.query(

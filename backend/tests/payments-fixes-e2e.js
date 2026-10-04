@@ -270,6 +270,85 @@ async function queryDb(sql, params = []) {
   const orderAfterBypass = await queryDb('SELECT status FROM orders WHERE id = $1', [ordBypassId]);
   check("order remains 'delivered' after bypass attempt", orderAfterBypass[0]?.status === 'delivered', orderAfterBypass);
 
+  // ============================================================
+  console.log('\n--- ITEM 4: ADMIN PARTIAL REFUNDS SEQUENTIAL PROCESSING ---');
+  // ============================================================
+  // Test: two sequential partial refunds both processed => payment ends 'refunded' when the sum equals the payment amount; a third refund is rejected.
+  const prod4 = await call('create product for refund test', 'POST', '/api/products', {
+    name: 'Suspension Arm ' + rnd(),
+    oemPartNumber: 'FIX-REF-' + rnd(),
+    brand: 'FixBrand',
+    category: 'suspension',
+    pricePaise: 100000, // 1000 INR
+    stockQuantity: 10,
+  }, S.tok, 201);
+  const pId4 = find(prod4, 'id');
+
+  const ordRefund = await call('place order for refund test', 'POST', '/api/orders', {
+    productId: pId4,
+    quantity: 1,
+    deliveryAddress: '600 Refund Lane',
+  }, bTok, 201);
+  const ordRefundId = find(ordRefund, 'id');
+
+  await call('seller accepts ordRefund', 'PATCH', `/api/orders/${ordRefundId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('rider claims ordRefund', 'PATCH', `/api/delivery/${ordRefundId}/claim`, null, dTok, 200);
+  await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordRefundId}/status`, { status: 'out_for_delivery' }, dTok, 200);
+  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordRefundId}/status`, { status: 'delivered' }, dTok, 200);
+
+  // Schema cap test: amountPaise > 1000000000 should be rejected by Zod (400)
+  const hugeKey = 'huge-' + rnd() + '-' + rnd();
+  await call('refund amount exceeds schema cap 1000000000 -> 400', 'POST', '/api/admin/refunds', {
+    orderId: ordRefundId,
+    amountPaise: 1000000001,
+    reason: 'too huge',
+  }, aTok, 400, { 'Idempotency-Key': hugeKey });
+
+  // First partial refund: 40000 paise
+  const key1 = 'ref1-' + rnd() + '-' + rnd();
+  const ref1 = await call('create first partial refund (40000 paise)', 'POST', '/api/admin/refunds', {
+    orderId: ordRefundId,
+    amountPaise: 40000,
+    reason: 'First partial refund',
+  }, aTok, 201, { 'Idempotency-Key': key1 });
+  const ref1Id = find(ref1, 'id');
+
+  // Process first partial refund
+  await call('process first partial refund', 'PATCH', `/api/admin/refunds/${ref1Id}/process`, {
+    status: 'processed',
+    note: 'First partial refund processed',
+  }, aTok, 200);
+
+  const payAfter1 = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordRefundId]);
+  check("payment status is partially_refunded after 1st refund", payAfter1[0]?.status === 'partially_refunded', payAfter1);
+
+  // Second partial refund: 60000 paise (sum = 100000, equals total payment amount)
+  // Under the old code, this failed with 409 because payment status was 'partially_refunded' not 'succeeded'
+  const key2 = 'ref2-' + rnd() + '-' + rnd();
+  const ref2 = await call('create second partial refund (60000 paise)', 'POST', '/api/admin/refunds', {
+    orderId: ordRefundId,
+    amountPaise: 60000,
+    reason: 'Second partial refund',
+  }, aTok, 201, { 'Idempotency-Key': key2 });
+  const ref2Id = find(ref2, 'id');
+
+  // Process second partial refund
+  await call('process second partial refund', 'PATCH', `/api/admin/refunds/${ref2Id}/process`, {
+    status: 'processed',
+    note: 'Second partial refund processed',
+  }, aTok, 200);
+
+  const payAfter2 = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordRefundId]);
+  check("payment ends 'refunded' when sum equals payment amount", payAfter2[0]?.status === 'refunded', payAfter2);
+
+  // Third refund attempt: must be rejected (409 because payment is 'refunded')
+  const key3 = 'ref3-' + rnd() + '-' + rnd();
+  await call('third refund rejected when payment already refunded -> 409', 'POST', '/api/admin/refunds', {
+    orderId: ordRefundId,
+    amountPaise: 10000,
+    reason: 'Third refund should fail',
+  }, aTok, [400, 409], { 'Idempotency-Key': key3 });
+
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();
