@@ -45,8 +45,8 @@ async function submitComplaint(req, res) {
     await dataStore.saveTicket({
       id: ticketId, customerId, orderId: investigation.focusOrder?.id || null,
       category: analysis.intent || 'general', subject: complaintText.slice(0, 200),
-      status: decision.action === 'auto_resolve' ? 'resolved' : decision.action === 'escalate' ? 'escalated' : 'open',
-      resolution: decision.reason || null, analysis, investigation, rootCause, decision,
+      status: decision.decision === 'AUTO_RESOLVE' ? 'resolved' : decision.decision === 'HUMAN_ESCALATION' ? 'escalated' : 'awaiting_customer',
+      resolution: decision.reasoning || null, analysis, investigation, rootCause, decision,
     });
 
     const totalMs = Date.now() - totalStart;
