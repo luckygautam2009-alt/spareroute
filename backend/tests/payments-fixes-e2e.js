@@ -101,6 +101,14 @@ async function queryDb(sql, params = []) {
   const bTok = find(bReg, 'accessToken');
   const bId = find(bReg, 'id');
 
+  const dReg = await call('register rider', 'POST', '/api/auth/register', {
+    fullName: 'Fixes Rider ' + rnd(),
+    phone: '7' + rnd() + '4',
+    password: PW,
+    role: 'delivery_partner',
+  });
+  const dTok = find(dReg, 'accessToken');
+
   // ============================================================
   console.log('\n--- ITEM 1: MONEY ARITHMETIC WITH MECHANIC FEE ---');
   // ============================================================
@@ -144,6 +152,102 @@ async function queryDb(sql, params = []) {
   const ctx = await call('internal context verification', 'GET', `/api/internal/customers/${bId}/context`, null, null, 200, { 'x-internal-api-key': INTERNAL_API_KEY });
   const pCheck = (ctx.data?.payments || []).find((p) => p.orderId === orderId1);
   check('API payment amount in rupees == 2800', pCheck && pCheck.amount === 2800, pCheck);
+
+  // ============================================================
+  console.log('\n--- ITEM 2: SELLER STATUS UPDATE GUARDS & STOCK RESTORATION ---');
+  // ============================================================
+  async function getStock(pId) {
+    const res = await queryDb('SELECT stock_quantity FROM products WHERE id = $1', [pId]);
+    return Number(res[0]?.stock_quantity);
+  }
+
+  // 1. Stock restored on seller reject
+  const prod2 = await call('create product for reject/cancel tests', 'POST', '/api/products', {
+    name: 'Brake Pad ' + rnd(),
+    oemPartNumber: 'FIX-BP-' + rnd(),
+    brand: 'FixBrand',
+    category: 'brakes',
+    pricePaise: 100000,
+    stockQuantity: 10,
+  }, S.tok, 201);
+  const pId2 = find(prod2, 'id');
+
+  const ordReject = await call('place order for reject', 'POST', '/api/orders', {
+    productId: pId2,
+    quantity: 2,
+    deliveryAddress: '200 Reject Blvd',
+  }, bTok, 201);
+  const ordRejectId = find(ordReject, 'id');
+  check('stock decremented by 2 to 8', (await getStock(pId2)) === 8);
+
+  await call('seller rejects placed order', 'PATCH', `/api/orders/${ordRejectId}/status`, { status: 'rejected_by_seller' }, S.tok, 200);
+  check('stock restored to 10 on seller reject', (await getStock(pId2)) === 10);
+  const payReject = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordRejectId]);
+  check('payment cancelled on seller reject', payReject[0]?.status === 'cancelled', payReject);
+
+  // 2. Stock restored on seller cancel
+  const ordCancel = await call('place order for cancel', 'POST', '/api/orders', {
+    productId: pId2,
+    quantity: 3,
+    deliveryAddress: '300 Cancel Blvd',
+  }, bTok, 201);
+  const ordCancelId = find(ordCancel, 'id');
+  check('stock decremented to 7', (await getStock(pId2)) === 7);
+
+  await call('seller accepts order', 'PATCH', `/api/orders/${ordCancelId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('seller cancels accepted order', 'PATCH', `/api/orders/${ordCancelId}/status`, { status: 'cancelled' }, S.tok, 200);
+  check('stock restored to 10 on seller cancel', (await getStock(pId2)) === 10);
+  const payCancel = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordCancelId]);
+  check('payment cancelled on seller cancel', payCancel[0]?.status === 'cancelled', payCancel);
+
+  // 3. Cancelled order cannot be resurrected
+  await call('seller resurrect cancel -> 409', 'PATCH', `/api/orders/${ordCancelId}/status`, { status: 'accepted_by_seller' }, S.tok, 409);
+  await call('seller reject cancelled order -> 409', 'PATCH', `/api/orders/${ordCancelId}/status`, { status: 'rejected_by_seller' }, S.tok, 409);
+  await call('seller re-cancel cancelled order -> 409', 'PATCH', `/api/orders/${ordCancelId}/status`, { status: 'cancelled' }, S.tok, 409);
+
+  // 4. Seller cannot cancel/reject/accept an out_for_delivery, delivered, or returned order
+  const ordDeliv = await call('place order for delivery transitions', 'POST', '/api/orders', {
+    productId: pId2,
+    quantity: 1,
+    deliveryAddress: '400 Transit Way',
+  }, bTok, 201);
+  const ordDelivId = find(ordDeliv, 'id');
+  await call('seller accepts ordDeliv', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
+  await call('rider claims ordDeliv', 'PATCH', `/api/delivery/${ordDelivId}/claim`, null, dTok, 200);
+
+  // Try seller cancel when delivery_partner_id is NOT null -> 409!
+  await call('seller cancel when claimed by rider -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
+
+  await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordDelivId}/status`, { status: 'out_for_delivery' }, dTok, 200);
+
+  // out_for_delivery: seller cannot accept, reject, or cancel
+  await call('seller accept out_for_delivery -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'accepted_by_seller' }, S.tok, 409);
+  await call('seller reject out_for_delivery -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'rejected_by_seller' }, S.tok, 409);
+  await call('seller cancel out_for_delivery -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
+
+  // Move to delivered
+  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordDelivId}/status`, { status: 'delivered' }, dTok, 200);
+  const payDeliveredBefore = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordDelivId]);
+  check('delivered payment is succeeded', payDeliveredBefore[0]?.status === 'succeeded', payDeliveredBefore);
+
+  // delivered: seller cannot accept, reject, or cancel
+  await call('seller accept delivered -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'accepted_by_seller' }, S.tok, 409);
+  await call('seller reject delivered -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'rejected_by_seller' }, S.tok, 409);
+  await call('seller cancel delivered -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
+
+  const payDeliveredAfter = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordDelivId]);
+  check("delivered order's payment stays succeeded", payDeliveredAfter[0]?.status === 'succeeded', payDeliveredAfter);
+
+  // Move to returned: return request -> seller approves -> seller marks received -> order status: returned
+  const retReq = await call('buyer requests return', 'POST', `/api/orders/${ordDelivId}/return`, { reason: 'Defective product received' }, bTok, 201);
+  const retReqId = find(retReq, 'id');
+  await call('seller approves return', 'PATCH', `/api/returns/${retReqId}/review`, { decision: 'approved' }, S.tok, 200);
+  await call('seller marks received', 'PATCH', `/api/returns/${retReqId}/received`, null, S.tok, 200);
+
+  // returned: seller cannot accept, reject, or cancel
+  await call('seller accept returned order -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'accepted_by_seller' }, S.tok, 409);
+  await call('seller reject returned order -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'rejected_by_seller' }, S.tok, 409);
+  await call('seller cancel returned order -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
 
   console.log(`\n${fails === 0 ? 'ALL PASSED' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);

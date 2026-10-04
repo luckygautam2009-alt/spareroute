@@ -99,21 +99,44 @@ const updateStatus = asyncHandler(async (req, res) => {
     if (!seller) throw new AppError('Seller profile not found', 404);
 
     const orderResult = await client.query(
-      `SELECT id, status FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE`,
+      `SELECT id, status, delivery_partner_id FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE`,
       [orderId, seller.id]
     );
     const order = orderResult.rows[0];
     if (!order) throw new AppError('Order not found or does not belong to you', 404);
 
     const fromStatus = order.status;
+    const isValidTransition =
+      (fromStatus === 'placed' && (status === 'accepted_by_seller' || status === 'rejected_by_seller')) ||
+      (fromStatus === 'accepted_by_seller' && status === 'cancelled' && order.delivery_partner_id === null);
+
+    if (!isValidTransition) {
+      throw new AppError(`Cannot transition order from '${fromStatus}' to '${status}'`, 409);
+    }
+
     let result;
     if (status === 'rejected_by_seller' || status === 'cancelled') {
+      const itemsResult = await client.query(
+        `SELECT product_id, quantity FROM order_items WHERE order_id = $1`,
+        [orderId]
+      );
+      for (const item of itemsResult.rows) {
+        await client.query(
+          `SELECT id FROM products WHERE id = $1 FOR UPDATE`,
+          [item.product_id]
+        );
+        await client.query(
+          `UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = now() WHERE id = $2`,
+          [item.quantity, item.product_id]
+        );
+      }
+
       result = await client.query(
         `UPDATE orders SET status = $1, cancelled_by = $2, updated_at = now() WHERE id = $3 AND seller_id = $4 RETURNING *`,
         [status, req.user.id, orderId, seller.id]
       );
       await client.query(
-        `UPDATE payments SET status = 'cancelled', updated_at = now() WHERE order_id = $1`,
+        `UPDATE payments SET status = 'cancelled', updated_at = now() WHERE order_id = $1 AND status = 'pending'`,
         [orderId]
       );
     } else {
@@ -237,7 +260,7 @@ const cancelOrder = asyncHandler(async (req, res) => {
     );
 
     await client.query(
-      `UPDATE payments SET status = 'cancelled', updated_at = now() WHERE order_id = $1`,
+      `UPDATE payments SET status = 'cancelled', updated_at = now() WHERE order_id = $1 AND status = 'pending'`,
       [orderId]
     );
 
