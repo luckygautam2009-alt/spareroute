@@ -1,4 +1,4 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const env = require('../config/env');
 
 // General API traffic
@@ -24,7 +24,7 @@ const authLimiter = rateLimit({
 const deliveryOtpLimiter = rateLimit({
   windowMs: parseInt(process.env.DELIVERY_OTP_RATE_LIMIT_WINDOW_MS, 10) || 60 * 60 * 1000,
   max: parseInt(process.env.DELIVERY_OTP_RATE_LIMIT_MAX, 10) || 30,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => (req.user?.id ? String(req.user.id) : ipKeyGenerator(req.ip)),
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many delivery code requests, please try again later.', message: 'Too many delivery code requests, please try again later.' },
