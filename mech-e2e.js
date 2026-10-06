@@ -26,8 +26,11 @@ function check(label, cond, extra) {
   if (!cond) fails++;
   console.log(`${cond ? 'PASS' : 'FAIL'}       ${label}${cond ? '' : '  -> ' + JSON.stringify(extra)}`);
 }
+const ADMIN_PHONE = process.env.E2E_ADMIN_PHONE || '9000000001';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@12345678';
+
 (async () => {
-  const aLogin = await call('admin login', 'POST', '/api/auth/login', { phone: '9000000001', password: 'Admin@12345678' });
+  const aLogin = await call('admin login', 'POST', '/api/auth/login', { phone: ADMIN_PHONE, password: ADMIN_PASSWORD });
   const aTok = find(aLogin, 'accessToken');
 
   async function makeSeller(tag) {

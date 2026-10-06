@@ -34,7 +34,10 @@ async function call(label, base, method, path, body, token) {
   const ini = await call('kyc initiate', SR, 'POST', '/api/kyc/initiate', { aadhaarNumber: '123412341234' }, sTok);
   await call('kyc confirm (stub OTP)', SR, 'POST', '/api/kyc/confirm', { referenceId: find(ini, 'referenceId'), otp: '123456' }, sTok);
 
-  const aLogin = await call('admin login', SR, 'POST', '/api/auth/login', { phone: '9000000001', password: 'Admin@12345678' });
+const ADMIN_PHONE = process.env.E2E_ADMIN_PHONE || '9000000001';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@12345678';
+
+  const aLogin = await call('admin login', SR, 'POST', '/api/auth/login', { phone: ADMIN_PHONE, password: ADMIN_PASSWORD });
   const aTok = tok(aLogin);
   const pend = await call('pending sellers', SR, 'GET', '/api/admin/sellers/pending', null, aTok);
   const list = Array.isArray(pend.data) ? pend.data : (find(pend, 'sellers') || []);

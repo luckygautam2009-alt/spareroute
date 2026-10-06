@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # SpareRoute backend dependencies
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
+  # Inquest backend dependencies
+  - package-ecosystem: "npm"
+    directory: "/inquest-backend"
+    schedule:
+      interval: "weekly"
+
+  # Inquest frontend dependencies
+  - package-ecosystem: "npm"
+    directory: "/inquest-frontend"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions workflow updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
