@@ -29,6 +29,7 @@ This guide covers deployment, environment configuration, database migrations, st
 | `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Maximum requests per IP per window. |
 | `AUTH_RATE_LIMIT_MAX` | No | `5` | Maximum auth requests (login/register) per IP per window. |
 | `RETURN_WINDOW_DAYS` | No | `10` | Days after delivery during which buyers can request returns. Must match Inquest POLICY3 `eligible_within_days`. |
+| `DELIVERY_OTP_SECRET` | In prod | — | AES-256-GCM encryption secret for delivery OTPs. **Min 32 chars in production**, no placeholders. Derived from `JWT_ACCESS_SECRET` in non-prod if unset. |
 
 ---
 
@@ -86,7 +87,7 @@ Subsequent runs of `npm run migrate` will only execute newly added migration scr
 When `NODE_ENV=production`, both services validate configuration strictly at startup and exit immediately (`process.exit(1)`) if any requirement is violated:
 - **KYC Provider**: SpareRoute refuses to boot if `KYC_PROVIDER_NAME=stub`. A certified provider (e.g., Digio) must be configured.
 - **CORS Origins**: Origins containing `localhost`, `127.0.0.1`, or `*` are rejected. Only explicit HTTPS domains are allowed.
-- **Secrets Strength**: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_API_KEY`, and `SPAREROUTE_INTERNAL_API_KEY` must each be at least **32 characters long** and cannot contain common placeholder words (`changeme`, `secret`, `example`, `placeholder`, `your_secret`).
+- **Secrets Strength**: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_API_KEY`, `SPAREROUTE_INTERNAL_API_KEY`, and `DELIVERY_OTP_SECRET` must each be at least **32 characters long** and cannot contain common placeholder words (`changeme`, `secret`, `example`, `placeholder`, `your_secret`).
 
 ### Staging Environment
 When `NODE_ENV=staging`:

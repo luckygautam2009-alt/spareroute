@@ -115,7 +115,7 @@ async function directSql(sql) {
   await call('seller accepts ord1', 'PATCH', `/api/orders/${orderId1}/status`, { status: 'accepted_by_seller' }, S.tok);
   await call('rider claims ord1', 'PATCH', `/api/delivery/${orderId1}/claim`, null, dTok);
   await call('out_for_delivery ord1', 'PATCH', `/api/delivery/${orderId1}/status`, { status: 'out_for_delivery' }, dTok);
-  await call('delivered ord1', 'PATCH', `/api/delivery/${orderId1}/status`, { status: 'delivered' }, dTok);
+  await require('./helpers/otp').deliverWithOtp(orderId1, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   const ctx2 = await call('internal context after delivery', 'GET', `/api/internal/customers/${bId}/context`, null, null, 200, { 'x-internal-api-key': INTERNAL_API_KEY });
   const pay2 = (ctx2.data?.payments || []).find(p => p.orderId === orderId1);

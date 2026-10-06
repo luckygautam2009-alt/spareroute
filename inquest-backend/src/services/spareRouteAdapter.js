@@ -50,6 +50,15 @@ function adaptOrders(orders) {
       ? (IN_TRANSIT_STATUSES.includes(o.status) && now > new Date(o.expectedDeliveryBy).getTime())
       : false,
     returnWindowDays: o.returnWindowDays != null ? o.returnWindowDays : null,
+    proofOfDelivery: o.deliveredVia === 'otp'
+      ? { method: 'otp', verifiedAt: o.deliveryOtpVerifiedAt || null }
+      : o.deliveredVia === 'admin_override'
+      ? { method: 'admin_override', verifiedAt: null }
+      : null,
+    deliveredVia: o.deliveredVia || null,
+    deliveryOtpVerifiedAt: o.deliveryOtpVerifiedAt || null,
+    deliveryOtpFailedAttempts: o.deliveryOtpFailedAttempts != null ? Number(o.deliveryOtpFailedAttempts) : 0,
+    deliveryOtpLocked: Boolean(o.deliveryOtpLocked),
   }));
 }
 

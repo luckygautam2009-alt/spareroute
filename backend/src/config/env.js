@@ -31,6 +31,7 @@ if (isProduction) {
   const secrets = {
     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+    DELIVERY_OTP_SECRET: process.env.DELIVERY_OTP_SECRET,
   };
 
   // 1. KYC must not be the stub provider in production
@@ -103,4 +104,5 @@ module.exports = {
     authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 5,
   },
   trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY, 10) : 0,
+  deliveryOtpSecret: process.env.DELIVERY_OTP_SECRET,
 };

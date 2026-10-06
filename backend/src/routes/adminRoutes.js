@@ -12,5 +12,6 @@ router.patch('/sellers/:sellerId/approve', validate(schemas.sellerIdParam, 'para
 router.get('/refunds', validate(schemas.listRefunds, 'query'), adminController.listRefunds);
 router.post('/refunds', validate(schemas.createRefund), adminController.createRefund);
 router.patch('/refunds/:id/process', validate(schemas.idParam, 'params'), validate(schemas.processRefund), adminController.processRefund);
+router.post('/orders/:orderId/force-deliver', validate(schemas.orderIdParam, 'params'), validate(schemas.forceDeliver), adminController.forceDeliver);
 
 module.exports = router;

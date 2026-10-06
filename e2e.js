@@ -52,7 +52,7 @@ async function call(label, base, method, path, body, token) {
   await call('rider sees available', SR, 'GET', '/api/delivery/available', null, dTok);
   await call('rider claims', SR, 'PATCH', `/api/delivery/${orderId}/claim`, null, dTok);
   await call('out for delivery', SR, 'PATCH', `/api/delivery/${orderId}/status`, { status: 'out_for_delivery' }, dTok);
-  await call('delivered', SR, 'PATCH', `/api/delivery/${orderId}/status`, { status: 'delivered' }, dTok);
+  await require('./backend/tests/helpers/otp').deliverWithOtp(orderId, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   const c = await call('INQUEST complaint', IQ, 'POST', '/api/complaints',
     { complaintText: 'Mera brake pad set order deliver ho gaya hai lekin part galat hai, mujhe refund chahiye' }, bTok);

@@ -12,7 +12,7 @@ const logger = winston.createLogger({
 
 // Redact common sensitive keys from any logged object so nobody
 // accidentally logs a password, token, or Aadhaar-related field.
-const SENSITIVE_KEYS = ['password', 'token', 'accessToken', 'refreshToken', 'aadhaar', 'otp'];
+const SENSITIVE_KEYS = ['password', 'token', 'accessToken', 'refreshToken', 'aadhaar', 'otp', 'ciphertext', 'deliveryotp'];
 
 function redact(obj) {
   if (!obj || typeof obj !== 'object') return obj;

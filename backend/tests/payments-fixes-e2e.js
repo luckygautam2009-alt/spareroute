@@ -226,7 +226,7 @@ async function queryDb(sql, params = []) {
   await call('seller cancel out_for_delivery -> 409', 'PATCH', `/api/orders/${ordDelivId}/status`, { status: 'cancelled' }, S.tok, 409);
 
   // Move to delivered
-  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordDelivId}/status`, { status: 'delivered' }, dTok, 200);
+  await require('./helpers/otp').deliverWithOtp(ordDelivId, bTok, dTok); console.log('[200] delivered (via OTP)');
   const payDeliveredBefore = await queryDb('SELECT status FROM payments WHERE order_id = $1', [ordDelivId]);
   check('delivered payment is succeeded', payDeliveredBefore[0]?.status === 'succeeded', payDeliveredBefore);
 
@@ -262,7 +262,7 @@ async function queryDb(sql, params = []) {
   await call('seller accepts ordBypass', 'PATCH', `/api/orders/${ordBypassId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
   await call('rider claims ordBypass', 'PATCH', `/api/delivery/${ordBypassId}/claim`, null, dTok, 200);
   await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'out_for_delivery' }, dTok, 200);
-  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'delivered' }, dTok, 200);
+  await require('./helpers/otp').deliverWithOtp(ordBypassId, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   // Delivery partner tries to set 'returned' -> must fail (400)
   await call('rider cannot set returned -> 400', 'PATCH', `/api/delivery/${ordBypassId}/status`, { status: 'returned' }, dTok, 400);
@@ -294,7 +294,7 @@ async function queryDb(sql, params = []) {
   await call('seller accepts ordRefund', 'PATCH', `/api/orders/${ordRefundId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
   await call('rider claims ordRefund', 'PATCH', `/api/delivery/${ordRefundId}/claim`, null, dTok, 200);
   await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordRefundId}/status`, { status: 'out_for_delivery' }, dTok, 200);
-  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordRefundId}/status`, { status: 'delivered' }, dTok, 200);
+  await require('./helpers/otp').deliverWithOtp(ordRefundId, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   // Schema cap test: amountPaise > 1000000000 should be rejected by Zod (400)
   const hugeKey = 'huge-' + rnd() + '-' + rnd();
@@ -414,7 +414,7 @@ async function queryDb(sql, params = []) {
   await call('seller accepts ordLock', 'PATCH', `/api/orders/${ordLockId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
   await call('rider claims ordLock', 'PATCH', `/api/delivery/${ordLockId}/claim`, null, dTok, 200);
   await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordLockId}/status`, { status: 'out_for_delivery' }, dTok, 200);
-  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordLockId}/status`, { status: 'delivered' }, dTok, 200);
+  await require('./helpers/otp').deliverWithOtp(ordLockId, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   // Create an initial return request
   const retLock = await call('create return request for concurrency', 'POST', `/api/orders/${ordLockId}/return`, {
@@ -463,7 +463,7 @@ async function queryDb(sql, params = []) {
   await call('seller accepts ordRet', 'PATCH', `/api/orders/${ordRetId}/status`, { status: 'accepted_by_seller' }, S.tok, 200);
   await call('rider claims ordRet', 'PATCH', `/api/delivery/${ordRetId}/claim`, null, dTok, 200);
   await call('rider marks out_for_delivery', 'PATCH', `/api/delivery/${ordRetId}/status`, { status: 'out_for_delivery' }, dTok, 200);
-  await call('rider marks delivered', 'PATCH', `/api/delivery/${ordRetId}/status`, { status: 'delivered' }, dTok, 200);
+  await require('./helpers/otp').deliverWithOtp(ordRetId, bTok, dTok); console.log('[200] delivered (via OTP)');
 
   // Manually null out delivered_at in database while keeping status 'delivered'
   await queryDb('UPDATE orders SET delivered_at = NULL WHERE id = $1', [ordRetId]);

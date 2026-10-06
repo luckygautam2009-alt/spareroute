@@ -73,7 +73,7 @@ function check(label, cond, extra) {
   await call('seller accepts', 'PATCH', `/api/orders/${orderId}/status`, { status: 'accepted_by_seller' }, A.tok);
   await call('rider claims', 'PATCH', `/api/delivery/${orderId}/claim`, null, dTok);
   await call('out for delivery', 'PATCH', `/api/delivery/${orderId}/status`, { status: 'out_for_delivery' }, dTok);
-  await call('delivered', 'PATCH', `/api/delivery/${orderId}/status`, { status: 'delivered' }, dTok);
+  await require('./backend/tests/helpers/otp').deliverWithOtp(orderId, bTok, dTok); console.log('[200] delivered (via OTP)');
   await call('rating 6 rejected (validation)', 'PATCH', `/api/orders/${orderId}/rate-mechanic`, { rating: 6 }, bTok, 400);
   await call('rate 5 after delivery', 'PATCH', `/api/orders/${orderId}/rate-mechanic`, { rating: 5, comment: 'Kaam badhiya' }, bTok, 200);
   await call('double rating rejected', 'PATCH', `/api/orders/${orderId}/rate-mechanic`, { rating: 1 }, bTok, 409);
